@@ -1,0 +1,187 @@
+/*
+ * Sample data for the Backoffice screens (KPIs, recent tickets, payment
+ * breakdown and the section metadata). Placeholder data per the README — to be
+ * replaced by real reporting queries later. Icons are PrimeIcons.
+ */
+
+export interface Kpi {
+  label: string
+  value: string
+  sub: string
+  icon: string
+  tint: string
+  color: string
+}
+
+export interface RecentTicket {
+  no: string
+  hora: string
+  method: string
+  items: number
+  amount: string
+  icon: string
+  tint: string
+  color: string
+}
+
+export interface PayBreakdownRow {
+  label: string
+  amount: string
+  pct: string
+  icon: string
+  color: string
+}
+
+export interface NavItem {
+  id: string
+  label: string
+  icon: string
+  /** Permission(s) that grant access to this section (ANY). Empty = always shown. */
+  permissions?: string[]
+}
+
+export const navItems: NavItem[] = [
+  { id: 'ventas', label: 'Ventas · Cierre Z', icon: 'pi-chart-line', permissions: ['sale:read'] },
+  { id: 'tickets', label: 'Tickets', icon: 'pi-receipt', permissions: ['sale:read'] },
+  { id: 'productos', label: 'Productos', icon: 'pi-box', permissions: ['product:read'] },
+  {
+    id: 'categorias',
+    label: 'Categorías',
+    icon: 'pi-sitemap',
+    permissions: ['category:read']
+  },
+  {
+    id: 'cajas',
+    label: 'Cajas por categoría',
+    icon: 'pi-wallet',
+    permissions: ['accounting_group:read']
+  },
+  { id: 'usuarios', label: 'Usuarios', icon: 'pi-users', permissions: ['user:read'] },
+  { id: 'roles', label: 'Roles y permisos', icon: 'pi-shield', permissions: ['role:read'] },
+  { id: 'stock', label: 'Stock', icon: 'pi-server', permissions: ['stock:read'] },
+  { id: 'clientes', label: 'Clientes', icon: 'pi-id-card', permissions: ['client:read'] },
+  {
+    id: 'configuracion',
+    label: 'Configuración',
+    icon: 'pi-cog',
+    permissions: ['settings:read']
+  }
+]
+
+/** Breadcrumb + title per section. */
+export const sectionTitles: Record<string, [string, string]> = {
+  ventas: ['INFORMES', 'Ventas y cierre de caja'],
+  tickets: ['INFORMES', 'Histórico de tickets'],
+  productos: ['CATÁLOGO', 'Productos'],
+  categorias: ['CATÁLOGO', 'Categorías y subcategorías'],
+  cajas: ['CATÁLOGO', 'Cajas por categoría'],
+  usuarios: ['EQUIPO', 'Usuarios y empleados'],
+  roles: ['EQUIPO', 'Roles y permisos'],
+  stock: ['ALMACÉN', 'Control de stock'],
+  clientes: ['CRM', 'Clientes y cuentas'],
+  configuracion: ['SISTEMA', 'Configuración del puesto']
+}
+
+export const kpis: Kpi[] = [
+  {
+    label: 'Ventas de hoy',
+    value: '1.247,80 €',
+    sub: 'Turno abierto a las 09:00',
+    icon: 'pi-euro',
+    tint: '#e8f5ec',
+    color: '#27ae60'
+  },
+  {
+    label: 'Tickets',
+    value: '86',
+    sub: 'Ticket medio 14,51 €',
+    icon: 'pi-book',
+    tint: '#eef5ff',
+    color: '#2196F3'
+  },
+  {
+    label: 'Efectivo en caja',
+    value: '742,30 €',
+    sub: 'Fondo inicial 150,00 €',
+    icon: 'pi-money-bill',
+    tint: '#fff7ed',
+    color: '#FF9800'
+  },
+  {
+    label: 'Fiado pendiente',
+    value: '86,90 €',
+    sub: '3 clientes con deuda',
+    icon: 'pi-history',
+    tint: '#fdeef2',
+    color: '#ec407a'
+  }
+]
+
+export const recentTickets: RecentTicket[] = [
+  {
+    no: '#0086',
+    hora: '13:42',
+    method: 'Tarjeta',
+    items: 4,
+    amount: '18,40 €',
+    icon: 'pi-credit-card',
+    tint: '#eef5ff',
+    color: '#2196F3'
+  },
+  {
+    no: '#0085',
+    hora: '13:35',
+    method: 'Efectivo',
+    items: 2,
+    amount: '6,15 €',
+    icon: 'pi-money-bill',
+    tint: '#e8f5ec',
+    color: '#27ae60'
+  },
+  {
+    no: '#0084',
+    hora: '13:28',
+    method: 'Fiado',
+    items: 7,
+    amount: '24,90 €',
+    icon: 'pi-book',
+    tint: '#fdeef2',
+    color: '#ec407a'
+  },
+  {
+    no: '#0083',
+    hora: '13:19',
+    method: 'Tarjeta',
+    items: 3,
+    amount: '11,70 €',
+    icon: 'pi-credit-card',
+    tint: '#eef5ff',
+    color: '#2196F3'
+  },
+  {
+    no: '#0082',
+    hora: '13:05',
+    method: 'Efectivo',
+    items: 5,
+    amount: '21,30 €',
+    icon: 'pi-money-bill',
+    tint: '#e8f5ec',
+    color: '#27ae60'
+  },
+  {
+    no: '#0081',
+    hora: '12:58',
+    method: 'Efectivo',
+    items: 1,
+    amount: '1,20 €',
+    icon: 'pi-money-bill',
+    tint: '#e8f5ec',
+    color: '#27ae60'
+  }
+]
+
+export const payBreakdown: PayBreakdownRow[] = [
+  { label: 'Efectivo', amount: '742,30 €', pct: '60%', icon: 'pi-money-bill', color: '#27ae60' },
+  { label: 'Tarjeta', amount: '418,60 €', pct: '33%', icon: 'pi-credit-card', color: '#2196F3' },
+  { label: 'Fiado', amount: '86,90 €', pct: '7%', icon: 'pi-book', color: '#ec407a' }
+]

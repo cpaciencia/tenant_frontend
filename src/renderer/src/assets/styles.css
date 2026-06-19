@@ -1,0 +1,141 @@
+@import 'tailwindcss';
+@import 'tailwindcss-primeui';
+
+/*
+ * Design tokens for the POS redesign (see design_handoff README). These mirror
+ * the prototype's palette, radii and shadows so views can reference them by name
+ * instead of repeating hex codes. UI font is Lato; the brand title uses Playfair
+ * Display. Both are bundled via @fontsource (imported in main.ts) — no CDN,
+ * because the renderer CSP only allows same-origin assets.
+ */
+:root {
+  /* Brand greens */
+  --pos-green: #27ae60;
+  --pos-green-hover: #219a52;
+  --pos-green-dark: #0f2417;
+  --pos-green-soft: #e8f5ec;
+
+  /* Surfaces */
+  --pos-app-bg: #e8edf1;
+  --pos-panel: #ffffff;
+  --pos-border-subtle: #eef2f5;
+  --pos-border-medium: #e2e8f0;
+
+  /* Text */
+  --pos-text: #1f2937;
+  --pos-text-2: #64748b;
+  --pos-text-3: #94a3b8;
+  --pos-text-disabled: #cbd5e1;
+
+  /* Feedback */
+  --pos-danger: #e11d48;
+  --pos-danger-bg: #fee2e2;
+  --pos-danger-bg-soft: #fff1f2;
+  --pos-warn: #c2410c;
+  --pos-warn-bg: #fff7ed;
+  --pos-warn-border: #fed7aa;
+
+  /* Radii */
+  --pos-radius-panel: 16px;
+  --pos-radius-card: 15px;
+  --pos-radius-tile: 13px;
+  --pos-radius-control: 12px;
+  --pos-radius-input: 10px;
+
+  /* Shadows */
+  --pos-shadow-panel: 0 4px 14px rgba(15, 36, 23, 0.06);
+  --pos-shadow-card: 0 3px 12px rgba(15, 36, 23, 0.05);
+  --pos-shadow-cobrar: 0 6px 16px rgba(39, 174, 96, 0.3);
+  --pos-shadow-modal: 0 30px 70px rgba(0, 0, 0, 0.4);
+
+  --font-ui:
+    'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-brand: 'Playfair Display', Georgia, serif;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--pos-text);
+  background: var(--pos-app-bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Monetary figures: aligned, heavy. */
+.pos-money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+/* Slim scrollbars to match the prototype. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pos-text-disabled);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes pos-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes pos-fadein {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Shared backoffice primitives (used across section components). */
+.bo-card {
+  background: var(--pos-panel);
+  border-radius: var(--pos-radius-card);
+  box-shadow: var(--pos-shadow-card);
+  border: 1px solid var(--pos-border-subtle);
+  overflow: hidden;
+}
+.bo-badge {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.bo-add-btn {
+  height: 42px;
+  padding: 0 18px;
+  background: var(--pos-green);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.12s ease;
+}
+.bo-add-btn:hover {
+  background: var(--pos-green-hover);
+}
