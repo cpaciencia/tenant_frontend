@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection'
 import { upsertSuppliers } from '../repositories/suppliers'
+import { terminalAuthHeaders } from './terminalAuth'
 
 export type FetchLike = typeof fetch
 
@@ -22,6 +23,7 @@ export async function pullSuppliers(
 ): Promise<number> {
   const res = await fetchFn(`${baseUrl.trim().replace(/\/+$/, '')}/api/catalog/suppliers`, {
     method: 'GET',
+    headers: terminalAuthHeaders(),
     signal: AbortSignal.timeout(8000)
   })
   if (!res.ok) throw new Error(`Supplier down-sync failed (HTTP ${res.status})`)

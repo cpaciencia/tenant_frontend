@@ -15,6 +15,7 @@ import RolesSection from '../components/backoffice/RolesSection.vue'
 import StockSection from '../components/backoffice/StockSection.vue'
 import ClientesSection from '../components/backoffice/ClientesSection.vue'
 import ConfiguracionSection from '../components/backoffice/ConfiguracionSection.vue'
+import PuestosSection from '../components/backoffice/PuestosSection.vue'
 import { useAuthStore } from '../stores/auth'
 import logoUrl from '../assets/img/logo.png'
 
@@ -35,6 +36,7 @@ const sections = {
   roles: RolesSection,
   stock: StockSection,
   clientes: ClientesSection,
+  puestos: PuestosSection,
   configuracion: ConfiguracionSection
 }
 

@@ -1,5 +1,6 @@
 import type { SyncEnvelope } from '../../shared/types'
 import type { SyncQueueItem } from '../repositories/syncQueue'
+import { terminalAuthHeaders } from './terminalAuth'
 
 export type FetchLike = typeof fetch
 
@@ -32,7 +33,9 @@ function toEnvelope(item: SyncQueueItem): SyncEnvelope {
 
 /**
  * POSTs sync envelopes to `${baseUrl}/api/sync`. `fetchFn` is injectable for
- * tests. Network failures and 5xx/408/429 are retryable; other 4xx are not.
+ * tests. Network failures and 5xx/408/429 are retryable; so is 401 (this
+ * terminal's token isn't accepted — revoked or re-coded: keep everything queued
+ * until it is enrolled again, never drop sales). Other 4xx are not.
  *
  * `baseUrl` may be a function so the endpoint is resolved per request — this lets
  * the backend URL change at runtime (Settings) without rebuilding the worker.
@@ -47,7 +50,7 @@ export function createSyncClient(
       const endpoint = `${resolveBase()}/api/sync`
       const response = await fetchFn(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...terminalAuthHeaders() },
         body: JSON.stringify(toEnvelope(item))
       }).catch((cause) => {
         // Connection refused / offline -> retry later.
@@ -56,7 +59,10 @@ export function createSyncClient(
 
       if (!response.ok) {
         const retryable =
-          response.status >= 500 || response.status === 408 || response.status === 429
+          response.status >= 500 ||
+          response.status === 401 ||
+          response.status === 408 ||
+          response.status === 429
         throw new SyncError(`Sync failed with HTTP ${response.status}`, response.status, retryable)
       }
     }

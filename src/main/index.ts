@@ -15,6 +15,7 @@ import { pullCategories } from './sync/categoryPull'
 import { pullProducts } from './sync/productPull'
 import { pullAccountingGroups } from './sync/accountingGroupPull'
 import { pullSuppliers } from './sync/supplierPull'
+import { setTerminalToken } from './sync/terminalAuth'
 import { createEnrollmentClient } from './enrollment/client'
 import { createSafeStorageCredentialStore } from './enrollment/safeStorageStore'
 import { EnrollmentService } from './enrollment/service'
@@ -87,6 +88,7 @@ app.whenReady().then(async () => {
   async function startRuntime(credentials: IssuedCredentials): Promise<void> {
     if (runtimeStarted) return
     runtimeStarted = true
+    setTerminalToken(credentials.token)
     const db = await initDatabase(credentials.dbKey)
     const settings = adoptEnrolledTerminalId(db, credentials.terminalId)
     assignMissingShifts(db, settings.terminalId, settings.shifts)

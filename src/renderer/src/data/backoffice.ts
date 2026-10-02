@@ -138,6 +138,13 @@ export const navItems: NavItem[] = [
     permissions: ['role:read']
   },
   {
+    id: 'puestos',
+    label: 'Puestos',
+    icon: 'pi-desktop',
+    group: 'sistema',
+    permissions: ['terminal:manage']
+  },
+  {
     id: 'configuracion',
     label: 'Configuración',
     icon: 'pi-cog',
@@ -160,6 +167,7 @@ export const sectionTitles: Record<string, [string, string]> = {
   roles: ['EQUIPO', 'Roles y permisos'],
   stock: ['CATÁLOGO', 'Control de stock'],
   clientes: ['VENTAS', 'Clientes y cuentas'],
+  puestos: ['SISTEMA', 'Puestos de caja'],
   configuracion: ['SISTEMA', 'Configuración del puesto']
 }
 

@@ -1,3 +1,4 @@
+import { terminalAuthHeaders } from './terminalAuth'
 import type { DB } from '../db/connection'
 import {
   getCategoriesWatermark,
@@ -41,6 +42,7 @@ export async function pullCategories(
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/catalog/categories${query}`, {
     method: 'GET',
+    headers: terminalAuthHeaders(),
     signal: AbortSignal.timeout(8000)
   })
   if (!res.ok) {

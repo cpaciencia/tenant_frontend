@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { setTerminalToken } from './terminalAuth'
 import { createSyncClient, SyncError, type FetchLike } from './client'
 import type { SyncQueueItem } from '../repositories/syncQueue'
 
@@ -41,16 +42,29 @@ describe('createSyncClient', () => {
     })
   })
 
-  it('throws a retryable error on 5xx / 408 / 429', async () => {
-    for (const status of [500, 503, 408, 429]) {
+  it('throws a retryable error on 5xx / 401 / 408 / 429', async () => {
+    // 401 = this terminal's token is not accepted (revoked / re-coded): keep the
+    // queue intact until it is enrolled again.
+    for (const status of [500, 503, 401, 408, 429]) {
       const { client } = clientWith(status)
       await expect(client.push(item)).rejects.toMatchObject({ retryable: true, status })
     }
   })
 
   it('throws a non-retryable error on other 4xx', async () => {
-    const { client } = clientWith(400)
-    await expect(client.push(item)).rejects.toMatchObject({ retryable: false, status: 400 })
+    for (const status of [400, 403, 422]) {
+      const { client } = clientWith(status)
+      await expect(client.push(item)).rejects.toMatchObject({ retryable: false, status })
+    }
+  })
+
+  it('sends the terminal token once the runtime has set it', async () => {
+    setTerminalToken('tok-123')
+    const { client, fetchMock } = clientWith(200)
+    await client.push(item)
+    const init = (fetchMock.mock.calls[0] as unknown[])[1] as RequestInit
+    expect((init.headers as Record<string, string>)['X-Terminal-Token']).toBe('tok-123')
+    setTerminalToken(null)
   })
 
   it('treats a network failure as retryable', async () => {

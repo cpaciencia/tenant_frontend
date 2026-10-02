@@ -1,3 +1,4 @@
+import { terminalAuthHeaders } from './terminalAuth'
 import type { DB } from '../db/connection'
 import {
   getAccountingGroupsWatermark,
@@ -35,6 +36,7 @@ export async function pullAccountingGroups(
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/catalog/accounting-groups${query}`, {
     method: 'GET',
+    headers: terminalAuthHeaders(),
     signal: AbortSignal.timeout(8000)
   })
   if (!res.ok) {
