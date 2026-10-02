@@ -13,6 +13,7 @@ import {
 import { upsertAccountingGroups } from '../repositories/accountingGroups'
 import { getOpenSessions, insertOpenSession } from '../repositories/cashSessions'
 import { DEFAULT_SHIFTS } from '../../shared/shifts'
+import { createClient } from '../repositories/clients'
 import type { CloseSessionResult } from '../../shared/types'
 
 let db: DB
@@ -44,6 +45,16 @@ function sell(
   opts: { method?: 'cash' | 'card' | 'credit'; seller?: string; client?: string } = {}
 ): void {
   const method = opts.method ?? 'cash'
+  // A credit sale needs a real client: create it on first use.
+  let clientId: string | null = null
+  if (method === 'credit') {
+    const name = opts.client ?? 'Cliente'
+    const existing = db.prepare('SELECT id FROM clients WHERE name = ?').get(name) as
+      | { id: string }
+      | undefined
+    clientId =
+      existing?.id ?? createClient(db, 'T01', { name, actor: { userId: null, name: 'test' } }).id
+  }
   createSale(db, 'T01', {
     items: [
       { productId: 'p1', name: 'P1', quantity: 1, unitPriceCents: cents, accountingGroupId: 'g1' }
@@ -52,7 +63,7 @@ function sell(
       cashCents: method === 'cash' ? cents : 0,
       cardCents: method === 'card' ? cents : 0,
       creditCents: method === 'credit' ? cents : 0,
-      clientId: null,
+      clientId,
       clientName: opts.client ?? null
     },
     cashSessionId: sid,

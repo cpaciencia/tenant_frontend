@@ -25,6 +25,11 @@ import type {
   CashMovementsSummary,
   RecordCashMovementRequest,
   MarkInvoiceUploadedRequest,
+  AccountPayment,
+  Client,
+  ClientAccount,
+  CreateClientRequest,
+  SettleDebtRequest,
   Supplier,
   ParkedTicket,
   ParkedTicketActionRequest,
@@ -83,6 +88,11 @@ export const IpcChannels = {
   cashMovementsCurrent: 'cash-movements:current',
   cashMovementsSuppliers: 'cash-movements:suppliers',
   cashMovementsInvoiceUploaded: 'cash-movements:invoice-uploaded',
+  clientsList: 'clients:list',
+  clientsCreate: 'clients:create',
+  clientsAccount: 'clients:account',
+  clientsRefresh: 'clients:refresh',
+  clientsSettle: 'clients:settle',
   // Tickets set aside unpaid and resumed later.
   parkedList: 'parked:list',
   parkedPark: 'parked:park',
@@ -202,6 +212,18 @@ export interface IpcApi {
     suppliers: () => Promise<Supplier[]>
     /** The server confirmed it stores this supplier payment's invoice. */
     markInvoiceUploaded: (request: MarkInvoiceUploadedRequest) => Promise<CashMovement>
+  }
+  clients: {
+    /** "A cuenta" clients with what they owe (all terminals; exact offline). */
+    list: () => Promise<Client[]>
+    /** Add a client at the till (works offline; synced). */
+    create: (request: CreateClientRequest) => Promise<Client>
+    /** A client's balance and this till's movements. */
+    account: (clientId: string) => Promise<ClientAccount>
+    /** Re-pull clients and their balances from the server (best-effort). */
+    refresh: () => Promise<Client[]>
+    /** The client pays (part of) their debt, without a purchase. */
+    settle: (request: SettleDebtRequest) => Promise<AccountPayment>
   }
   parked: {
     /** Tickets parked on this terminal, oldest first. */

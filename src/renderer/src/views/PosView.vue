@@ -18,6 +18,7 @@ import ManualEntryDialog from '../components/pos/ManualEntryDialog.vue'
 import FreePriceDialog from '../components/pos/FreePriceDialog.vue'
 import ParkedTicketsDialog from '../components/pos/ParkedTicketsDialog.vue'
 import CashMovementsDialog from '../components/pos/CashMovementsDialog.vue'
+import ClientsDialog from '../components/pos/ClientsDialog.vue'
 import PendingItemsDialog from '../components/pos/PendingItemsDialog.vue'
 import { eur } from '../data/catalog'
 import logoUrl from '../assets/img/logo.png'
@@ -41,6 +42,7 @@ const showPending = ref(false)
 const showParked = ref(false)
 /** Supplier payments and cash in/out. */
 const showMovements = ref(false)
+const showClients = ref(false)
 /** Movements opened because closing is blocked by missing supplier invoices. */
 const movementsForClose = ref(false)
 
@@ -244,6 +246,14 @@ function goBackoffice(): void {
       <button
         v-if="hasSession"
         class="pos__closecaja"
+        title="Clientes a cuenta: ver lo que deben y cobrar deudas"
+        @click="showClients = true"
+      >
+        <i class="pi pi-id-card"></i> <span class="pos__label">Clientes</span>
+      </button>
+      <button
+        v-if="hasSession"
+        class="pos__closecaja"
         title="Pagos a proveedores (con su factura), entradas y retiradas de dinero"
         :class="{ 'pos__pending--blink': store.invoicesPending > 0 }"
         @click="showMovements = true"
@@ -304,6 +314,7 @@ function goBackoffice(): void {
     <!-- Tickets set aside unpaid, to resume or discard. -->
     <ParkedTicketsDialog v-if="showParked" @close="showParked = false" />
     <!-- Supplier payments and cash in/out of the open caja. -->
+    <ClientsDialog v-if="showClients" @close="showClients = false" />
     <CashMovementsDialog
       v-if="showMovements"
       :closing="movementsForClose"

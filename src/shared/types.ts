@@ -193,6 +193,12 @@ export interface CreateSaleRequest {
   /** The logged-in user ringing the sale (several people may sell into one caja). */
   sellerUserId: string | null
   sellerName: string
+  /**
+   * A client's debt paid together with this purchase (one payment at the till).
+   * Recorded as a separate account payment in the same transaction — not part of
+   * the sale. Not allowed on a credit sale or a refund.
+   */
+  settlement?: { clientId: string; cashCents: number; cardCents: number } | null
 }
 
 /** Cash/card/credit split totalled across a set of sales. */
@@ -266,6 +272,80 @@ export interface RecordCashMovementRequest {
   document?: string | null
   note?: string | null
   actor: Actor
+}
+
+/** An "a cuenta" client and what they owe right now (all terminals). */
+export interface Client {
+  id: string
+  name: string
+  /** Pitch, bungalow, how to recognise them… */
+  detail: string | null
+  phone: string | null
+  active: boolean
+  balanceCents: number
+}
+
+export interface CreateClientRequest {
+  name: string
+  detail?: string | null
+  phone?: string | null
+  actor: Actor
+}
+
+/**
+ * A payment of a client's debt (cobro de cuenta): cash/card into the caja of the
+ * day, NOT a sale. Optionally taken together with a purchase (`saleId`).
+ */
+export interface AccountPayment {
+  id: string
+  /** `CC-T01-2026-00001` */
+  paymentNumber: string
+  terminalId: string
+  clientId: string
+  clientName: string
+  cashCents: number
+  cardCents: number
+  totalCents: number
+  cashSessionId: string
+  saleId: string | null
+  userId: string | null
+  userName: string
+  note: string | null
+  createdAt: string
+}
+
+export interface SettleDebtRequest {
+  clientId: string
+  cashCents: number
+  cardCents: number
+  note?: string | null
+  actor: Actor
+}
+
+/** Debt payments taken in a caja. */
+export interface SettlementsSummary {
+  cashCents: number
+  cardCents: number
+  totalCents: number
+  list: AccountPayment[]
+}
+
+/** One line of a client's account as this till knows it. */
+export interface ClientMovement {
+  kind: 'credit_sale' | 'payment'
+  id: string
+  /** Ticket or payment number. */
+  reference: string
+  amountCents: number
+  createdAt: string
+  userName: string | null
+}
+
+export interface ClientAccount {
+  client: Client
+  /** What the client owes on other terminals (from the last sync). */
+  otherTerminalsCents: number
+  movements: ClientMovement[]
 }
 
 /** Totals of a caja's cash movements and how much put-in money is still to be taken out. */
@@ -347,6 +427,8 @@ export interface CashSession {
   floatAdjustments: FloatAdjustment[]
   /** Supplier payments and cash in/out recorded in this caja (sealed at close). */
   cashMovements: CashMovement[]
+  /** Debt payments taken in this caja (cobros de cuentas). */
+  settlements: AccountPayment[]
 }
 
 export interface OpenSessionRequest {
@@ -406,6 +488,8 @@ export interface SessionArqueo {
   expectedCashCents: number
   /** Supplier payments and cash in/out of the caja. */
   movements: CashMovementsSummary
+  /** Debt payments taken (cobros de cuentas): cash adds to the expected cash. */
+  settlements: SettlementsSummary
 }
 
 export interface Sale {
@@ -417,6 +501,8 @@ export interface Sale {
   totalCents: number
   createdAt: string
   payment: SalePayment
+  /** A client's debt paid together with this purchase, if any. */
+  settlement?: AccountPayment | null
 }
 
 export interface CartLine {

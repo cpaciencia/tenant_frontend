@@ -1,6 +1,6 @@
 /*
  * Sample data for the POS UI, ported from the design prototype. The README is
- * explicit that this is placeholder data: the catalog, clients, users and stock
+ * explicit that this is placeholder data: the catalog, users and stock
  * are meant to be swapped for the real data layer (SQLite via the IPC bridge)
  * later. Keeping it isolated here marks the seam.
  *
@@ -22,14 +22,6 @@ export interface CatalogProduct {
   name: string
   /** Price in euros (sample data uses euros, not cents). */
   price: number
-}
-
-export interface Client {
-  id: string
-  name: string
-  detail: string
-  /** Outstanding "fiado" (tab) balance in euros. */
-  saldo: number
 }
 
 export interface User {
@@ -181,14 +173,6 @@ export const catalog: Record<string, CatalogProduct[]> = {
     { name: 'Linterna', price: 6.9 }
   ]
 }
-
-export const clients: Client[] = [
-  { id: 'c1', name: 'Familia Müller', detail: 'Parcela 14 · Estancia larga', saldo: 42.8 },
-  { id: 'c2', name: 'Jean Dupont', detail: 'Bungalow Confort 3', saldo: 18.5 },
-  { id: 'c3', name: 'Rossi Marco', detail: 'Parcela 31', saldo: 0 },
-  { id: 'c4', name: 'García López', detail: 'Kampaoh 7', saldo: 25.6 },
-  { id: 'c5', name: 'The Smiths', detail: 'Parcela 8 · Caravana', saldo: 0 }
-]
 
 export const users: User[] = [
   { name: 'María Cajera', role: 'Cajero/a', status: 'Activo', active: true },

@@ -48,6 +48,15 @@ import {
   recordCashMovement
 } from '../services/cashMovements'
 import { listSuppliers } from '../repositories/suppliers'
+import {
+  createClient,
+  getClient,
+  listClients,
+  localClientMovements,
+  otherTerminalsBalance
+} from '../repositories/clients'
+import { settleDebt } from '../services/accountPayments'
+import { pullClients } from '../sync/clientPull'
 import { pullSuppliers } from '../sync/supplierPull'
 import { AuthService } from '../services/auth'
 import { pullCategories } from '../sync/categoryPull'
@@ -104,6 +113,18 @@ function assertCreateSaleRequest(value: unknown): asserts value is CreateSaleReq
     (payment.clientName != null && typeof payment.clientName !== 'string')
   ) {
     throw new Error('Invalid sale payment in request')
+  }
+  const settlement = (value as CreateSaleRequest).settlement
+  if (
+    settlement != null &&
+    (typeof settlement !== 'object' ||
+      typeof settlement.clientId !== 'string' ||
+      !Number.isInteger(settlement.cashCents) ||
+      !Number.isInteger(settlement.cardCents) ||
+      settlement.cashCents < 0 ||
+      settlement.cardCents < 0)
+  ) {
+    throw new Error('Invalid sale request: debt payment')
   }
   const { sellerUserId, sellerName, draftId } = value as CreateSaleRequest
   if (draftId != null && typeof draftId !== 'string') {
@@ -447,6 +468,65 @@ export function registerDbHandlers(
 
   ipcMain.handle(IpcChannels.cashMovementsSuppliers, () => listSuppliers(db))
 
+  ipcMain.handle(IpcChannels.clientsList, () => listClients(db))
+
+  ipcMain.handle(IpcChannels.clientsCreate, (_event, request: unknown) => {
+    const r = (request ?? {}) as Record<string, unknown>
+    const text = (v: unknown, max: number, required = false): string | null => {
+      if (v == null || v === '') {
+        if (required) throw new Error('Invalid client name')
+        return null
+      }
+      if (typeof v !== 'string' || v.length > max) throw new Error('Invalid client field')
+      return v
+    }
+    return createClient(db, getSettings(db).terminalId, {
+      name: text(r.name, 120, true)!,
+      detail: text(r.detail, 200),
+      phone: text(r.phone, 40),
+      actor: parseActor(r.actor)
+    })
+  })
+
+  ipcMain.handle(IpcChannels.clientsAccount, (_event, clientId: unknown) => {
+    if (typeof clientId !== 'string' || clientId.length > 64) throw new Error('Invalid client id')
+    const client = getClient(db, clientId)
+    if (!client) throw new Error('Cliente no encontrado')
+    return {
+      client,
+      otherTerminalsCents: otherTerminalsBalance(db, clientId),
+      movements: localClientMovements(db, clientId)
+    }
+  })
+
+  ipcMain.handle(IpcChannels.clientsRefresh, async () => {
+    try {
+      await pullClients(db, getSyncApiUrl())
+    } catch {
+      // offline: the mirror (and local movements) still give an exact-enough view
+    }
+    return listClients(db)
+  })
+
+  ipcMain.handle(IpcChannels.clientsSettle, (_event, request: unknown) => {
+    const r = (request ?? {}) as Record<string, unknown>
+    if (typeof r.clientId !== 'string' || r.clientId.length > 64)
+      throw new Error('Invalid client id')
+    for (const k of ['cashCents', 'cardCents'] as const) {
+      if (!Number.isInteger(r[k]) || (r[k] as number) < 0) throw new Error('Invalid amount')
+    }
+    if (r.note != null && (typeof r.note !== 'string' || r.note.length > 300)) {
+      throw new Error('Invalid note')
+    }
+    return settleDebt(db, getSettings(db).terminalId, {
+      clientId: r.clientId,
+      cashCents: r.cashCents as number,
+      cardCents: r.cardCents as number,
+      note: (r.note as string | null) ?? null,
+      actor: parseActor(r.actor)
+    })
+  })
+
   ipcMain.handle(IpcChannels.cashMovementsInvoiceUploaded, (_event, request: unknown) => {
     const r = (request ?? {}) as Record<string, unknown>
     if (typeof r.cashMovementId !== 'string' || r.cashMovementId.length > 64) {
@@ -550,7 +630,8 @@ export function registerDbHandlers(
       pullCategories(db, baseUrl, undefined, { full: true }),
       pullProducts(db, baseUrl, undefined, { full: true }),
       pullUsers(db, baseUrl, undefined, { full: true }),
-      pullSuppliers(db, baseUrl)
+      pullSuppliers(db, baseUrl),
+      pullClients(db, baseUrl)
     ])
     const countAt = (i: number): number | null =>
       settled[i].status === 'fulfilled'

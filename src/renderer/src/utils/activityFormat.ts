@@ -25,6 +25,18 @@ interface TypeMeta {
 
 export const EVENT_TYPES: Record<string, TypeMeta> = {
   'sale.completed': { label: 'Venta', icon: 'pi-shopping-cart', group: 'ventas', tone: 'ok' },
+  'account.payment': {
+    label: 'Cobro de cuenta',
+    icon: 'pi-wallet',
+    group: 'ventas',
+    tone: 'ok'
+  },
+  'client.created': {
+    label: 'Cliente nuevo',
+    icon: 'pi-user-plus',
+    group: 'ventas',
+    tone: 'info'
+  },
   'ticket.line_added': {
     label: 'Producto añadido',
     icon: 'pi-plus-circle',
@@ -190,6 +202,17 @@ function secondsText(seconds: unknown): string {
 /** One sentence describing the event (without who/when, shown in their own columns). */
 export function describeEvent(type: string, data: Data): string {
   switch (type) {
+    case 'account.payment': {
+      const how = [
+        num(data.cashCents) ? `efectivo ${eurCents(num(data.cashCents))}` : '',
+        num(data.cardCents) ? `tarjeta ${eurCents(num(data.cardCents))}` : ''
+      ]
+        .filter(Boolean)
+        .join(' + ')
+      return `Cobró ${eurCents(num(data.totalCents))} de la cuenta de ${str(data.clientName)} (${how})${data.withSale ? ' junto con una compra' : ''} · debía ${eurCents(num(data.balanceBeforeCents))}, queda ${eurCents(num(data.balanceAfterCents))} · ${str(data.paymentNumber)}`
+    }
+    case 'client.created':
+      return `Dio de alta al cliente ${str(data.name)}${data.detail ? ` (${str(data.detail)})` : ''}`
     case 'sale.completed': {
       const manual = num(data.manualLines)
       const parts = [
@@ -300,6 +323,8 @@ export function describeEvent(type: string, data: Data): string {
 export function eventAmountCents(type: string, data: Data): number | null {
   switch (type) {
     case 'sale.completed':
+      return num(data.totalCents)
+    case 'account.payment':
       return num(data.totalCents)
     case 'ticket.cleared':
     case 'payment.cancelled':

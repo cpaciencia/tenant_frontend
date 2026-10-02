@@ -69,6 +69,13 @@ const api: IpcApi = {
     complete: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsComplete, request),
     dismiss: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsDismiss, request)
   },
+  clients: {
+    list: () => ipcRenderer.invoke(IpcChannels.clientsList),
+    create: (request) => ipcRenderer.invoke(IpcChannels.clientsCreate, request),
+    account: (clientId) => ipcRenderer.invoke(IpcChannels.clientsAccount, clientId),
+    refresh: () => ipcRenderer.invoke(IpcChannels.clientsRefresh),
+    settle: (request) => ipcRenderer.invoke(IpcChannels.clientsSettle, request)
+  },
   cashMovements: {
     record: (request) => ipcRenderer.invoke(IpcChannels.cashMovementsRecord, request),
     current: () => ipcRenderer.invoke(IpcChannels.cashMovementsCurrent),

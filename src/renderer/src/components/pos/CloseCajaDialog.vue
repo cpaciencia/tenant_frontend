@@ -177,6 +177,20 @@ async function savePdf(): Promise<void> {
           </div>
         </div>
 
+        <div v-if="arqueo.settlements.list.length" class="cc-list">
+          <div class="cc-list-title">Cobros de cuentas (no son ventas)</div>
+          <div v-for="p in arqueo.settlements.list" :key="p.id" class="cc-row">
+            <span
+              >{{ p.clientName }} <small>{{ p.paymentNumber }}</small></span
+            ><b class="pos-money"
+              >{{ eur(p.totalCents / 100) }}
+              <small>{{
+                p.cardCents && !p.cashCents ? 'tarjeta' : p.cardCents ? 'mixto' : 'efectivo'
+              }}</small></b
+            >
+          </div>
+        </div>
+
         <!-- Cash reconciliation -->
         <div class="cc-recon">
           <div class="cc-row">
@@ -186,6 +200,10 @@ async function savePdf(): Promise<void> {
           <div class="cc-row">
             <span>+ Ventas en efectivo</span
             ><b class="pos-money">{{ eur(arqueo.tenders.cashCents / 100) }}</b>
+          </div>
+          <div v-if="arqueo.settlements.cashCents" class="cc-row">
+            <span>+ Cobros de cuentas (efectivo)</span
+            ><b class="pos-money">{{ eur(arqueo.settlements.cashCents / 100) }}</b>
           </div>
           <div v-if="arqueo.movements.cashInCents" class="cc-row">
             <span>+ Entradas de dinero</span

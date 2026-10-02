@@ -1,7 +1,8 @@
 import { computed, ref } from 'vue'
 import { findInvoice } from '../services/invoices'
 import { defineStore } from 'pinia'
-import { clients, eur } from '../data/catalog'
+import { eur } from '../data/catalog'
+import { useClientsStore } from './clients'
 import { useCatalogStore } from './catalog'
 import { useAuthStore } from './auth'
 import type {
@@ -143,6 +144,9 @@ export const usePosStore = defineStore('pos', () => {
   /** For mixed payment: how much of the total is paid in cash (euros); rest on card. */
   const mixedCashEur = ref(0)
   const fiadoClient = ref<string | null>(null)
+  /** A client's debt collected together with this purchase (optional). */
+  const settleClientId = ref<string | null>(null)
+  const settleEur = ref<number | null>(null)
   const payDone = ref(false)
   const payResultLabel = ref('')
   const payChange = ref(0)
@@ -491,8 +495,11 @@ export const usePosStore = defineStore('pos', () => {
     cashGiven.value = 0
     mixedCashEur.value = 0
     fiadoClient.value = null
+    settleClientId.value = null
+    settleEur.value = null
     payDone.value = false
     payError.value = ''
+    void useClientsStore().load()
   }
 
   function closePay(): void {
@@ -510,24 +517,43 @@ export const usePosStore = defineStore('pos', () => {
     payOpen.value = false
   }
 
-  /** Quick cash amount; a negative value means "exact" (matches the total). */
-  function pickCash(value: number): void {
-    cashGiven.value = value < 0 ? total.value : value
-  }
-
   /** Negative total = a refund (e.g. handing back a deposit/"fianza"). */
   const isRefund = computed(() => total.value < 0)
-  const cashOk = computed(() => cashGiven.value >= total.value && total.value > 0)
-  const change = computed(() => Math.max(0, cashGiven.value - total.value))
+
+  /** Debt collected with this purchase (euros): never on a credit sale or a refund. */
+  const settleAmount = computed(() =>
+    settleClientId.value && !isRefund.value && payMethod.value !== 'fiado'
+      ? Math.max(0, settleEur.value ?? 0)
+      : 0
+  )
+  const settleClient = computed(() => useClientsStore().get(settleClientId.value))
+  const settleValid = computed(
+    () =>
+      !settleClientId.value ||
+      payMethod.value === 'fiado' ||
+      (settleAmount.value > 0 &&
+        Math.round(settleAmount.value * 100) <= (settleClient.value?.balanceCents ?? 0))
+  )
+  /** What the customer pays now: the ticket plus any debt collected with it. */
+  const dueTotal = computed(() => Math.round((total.value + settleAmount.value) * 100) / 100)
+
+  /** Quick cash amount; a negative value means "exact" (matches what is due). */
+  function pickCash(value: number): void {
+    cashGiven.value = value < 0 ? dueTotal.value : value
+  }
+
+  const cashOk = computed(() => cashGiven.value >= dueTotal.value && dueTotal.value > 0)
+  const change = computed(() => Math.max(0, cashGiven.value - dueTotal.value))
 
   const confirmEnabled = computed(() => {
     if (total.value === 0) return false
+    if (!settleValid.value) return false
     // Refund: pay it straight back in cash or card (no change calculation needed).
     if (isRefund.value) return payMethod.value === 'efectivo' || payMethod.value === 'tarjeta'
     if (payMethod.value === 'efectivo') return cashOk.value
     if (payMethod.value === 'fiado') return !!fiadoClient.value
     if (payMethod.value === 'mixto')
-      return mixedCashEur.value >= 0 && mixedCashEur.value <= total.value
+      return mixedCashEur.value >= 0 && mixedCashEur.value <= dueTotal.value
     return true
   })
 
@@ -549,15 +575,53 @@ export const usePosStore = defineStore('pos', () => {
       const cash = Math.min(Math.max(0, Math.round(mixedCashEur.value * 100)), totalCents)
       return { cashCents: cash, cardCents: totalCents - cash, creditCents: 0, ...none }
     }
-    // fiado: the whole total is left on account. Clients are still sample data
-    // (no backend id yet), so only the name is snapshotted for the cierre.
-    const client = clients.find((c) => c.id === fiadoClient.value)
+    // A cuenta: the whole total goes on the client's account (Main names it).
+    const client = useClientsStore().get(fiadoClient.value)
     return {
       cashCents: 0,
       cardCents: 0,
       creditCents: totalCents,
-      clientId: null,
+      clientId: fiadoClient.value,
       clientName: client?.name ?? null
+    }
+  }
+
+  /**
+   * Split of the sale and the debt collected with it. Cash/card: all of it that
+   * way. Mixed: the cash typed covers the ticket first, the rest of it the debt;
+   * the card covers whatever remains.
+   */
+  function buildSplit(totalCents: number): {
+    payment: CreateSaleRequest['payment']
+    settlement: CreateSaleRequest['settlement']
+  } {
+    const settleCents = Math.round(settleAmount.value * 100)
+    if (settleCents <= 0 || !settleClientId.value) {
+      return { payment: buildPayment(totalCents), settlement: null }
+    }
+    const none = { clientId: null, clientName: null }
+    const clientId = settleClientId.value
+    if (payMethod.value === 'tarjeta') {
+      return {
+        payment: { cashCents: 0, cardCents: totalCents, creditCents: 0, ...none },
+        settlement: { clientId, cashCents: 0, cardCents: settleCents }
+      }
+    }
+    if (payMethod.value === 'mixto') {
+      const cash = Math.min(
+        Math.max(0, Math.round(mixedCashEur.value * 100)),
+        totalCents + settleCents
+      )
+      const saleCash = Math.min(cash, totalCents)
+      const settleCash = cash - saleCash
+      return {
+        payment: { cashCents: saleCash, cardCents: totalCents - saleCash, creditCents: 0, ...none },
+        settlement: { clientId, cashCents: settleCash, cardCents: settleCents - settleCash }
+      }
+    }
+    return {
+      payment: { cashCents: totalCents, cardCents: 0, creditCents: 0, ...none },
+      settlement: { clientId, cashCents: settleCents, cardCents: 0 }
     }
   }
 
@@ -592,7 +656,7 @@ export const usePosStore = defineStore('pos', () => {
               accountingGroupId: catalog.accountingGroupIdFor(l.id)
             }
       ),
-      payment: buildPayment(totalCents),
+      ...buildSplit(totalCents),
       cashSessionId: currentSession.value.id,
       draftId: draftId.value,
       sellerUserId: actor().userId,
@@ -609,35 +673,44 @@ export const usePosStore = defineStore('pos', () => {
       void catalog.refreshRanking()
       // Manual lines became pending items: update the blinking badge.
       if (ticket.value.some((l) => l.manual)) void refreshPendingCount()
-    } catch {
-      payError.value = 'No se pudo registrar la venta. Inténtalo de nuevo.'
+      // Balances changed (credit sale or debt collected).
+      if (sale.payment.creditCents !== 0 || sale.settlement) void useClientsStore().load()
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+          : ''
+      payError.value = msg || 'No se pudo registrar la venta. Inténtalo de nuevo.'
       return
     } finally {
       paying.value = false
     }
 
+    const due = dueTotal.value
     if (payMethod.value === 'efectivo') {
       if (isRefund.value) {
         payChange.value = 0
         payResultLabel.value = `Devolución en efectivo · ${eur(-t)}`
       } else {
-        payChange.value = cashGiven.value - t
-        payResultLabel.value = `Pago en efectivo · ${eur(t)}`
+        payChange.value = cashGiven.value - due
+        payResultLabel.value = `Pago en efectivo · ${eur(due)}`
       }
     } else if (payMethod.value === 'tarjeta') {
       payChange.value = 0
       payResultLabel.value = isRefund.value
         ? `Devolución a tarjeta · ${eur(-t)}`
-        : `Pago con tarjeta · ${eur(t)}`
+        : `Pago con tarjeta · ${eur(due)}`
     } else if (payMethod.value === 'mixto') {
       payChange.value = 0
-      const cash = Math.min(Math.max(0, mixedCashEur.value), t)
-      payResultLabel.value = `Mixto · ${eur(cash)} efectivo + ${eur(t - cash)} tarjeta`
+      const cash = Math.min(Math.max(0, mixedCashEur.value), due)
+      payResultLabel.value = `Mixto · ${eur(cash)} efectivo + ${eur(due - cash)} tarjeta`
     } else {
-      const c = clients.find((x) => x.id === fiadoClient.value)
-      if (c) c.saldo += t
       payChange.value = 0
-      payResultLabel.value = `Anotado a la cuenta de ${c ? c.name : ''}`
+      payResultLabel.value = `Anotado a la cuenta de ${lastSale.value?.payment.clientName ?? ''}`
+    }
+    const settled = lastSale.value?.settlement
+    if (settled) {
+      payResultLabel.value += ` · incluye ${eur(settled.totalCents / 100)} de la cuenta de ${settled.clientName} (${settled.paymentNumber})`
     }
     payDone.value = true
   }
@@ -649,6 +722,8 @@ export const usePosStore = defineStore('pos', () => {
     payDone.value = false
     cashGiven.value = 0
     fiadoClient.value = null
+    settleClientId.value = null
+    settleEur.value = null
     payError.value = ''
     lastTicketNumber.value = ''
   }
@@ -687,6 +762,11 @@ export const usePosStore = defineStore('pos', () => {
     cashGiven,
     mixedCashEur,
     fiadoClient,
+    settleClientId,
+    settleEur,
+    settleAmount,
+    settleValid,
+    dueTotal,
     payDone,
     payResultLabel,
     payChange,

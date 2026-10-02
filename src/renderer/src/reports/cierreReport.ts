@@ -42,6 +42,18 @@ export interface CierreReportData {
         createdAt: string
       }[]
     | null
+  /** Debt payments (cobros de cuentas): money in, not sales. */
+  settlements?:
+    | {
+        paymentNumber: string
+        clientName: string | null
+        cashCents: number
+        cardCents: number
+        totalCents: number
+        userName: string | null
+        createdAt: string
+      }[]
+    | null
   expectedCashCents: number | null
   countedCashCents: number | null
   differenceCents: number | null
@@ -122,7 +134,20 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
     cash_in: 'Entrada de dinero',
     cash_out: 'Retirada de dinero'
   }
+  const settlements = s.settlements ?? []
+  const settledCash = settlements.reduce((n, p) => n + p.cashCents, 0)
+  const settlementRows = settlements.length
+    ? settlements
+        .map(
+          (p) =>
+            `<tr><td>${esc(p.clientName ?? '—')} <span class="muted">${esc(p.paymentNumber)}</span><br><span class="muted">${esc(dateTime(p.createdAt))}${p.userName ? ` · ${esc(p.userName)}` : ''}</span></td>` +
+            `<td class="num">${p.cashCents ? `${eur(p.cashCents)} efectivo` : ''}${p.cashCents && p.cardCents ? '<br>' : ''}${p.cardCents ? `${eur(p.cardCents)} tarjeta` : ''}</td></tr>`
+        )
+        .join('') +
+      `<tr class="total"><td>Total cobrado de cuentas</td><td class="num">${eur(settlements.reduce((n, p) => n + p.totalCents, 0))}</td></tr>`
+    : ''
   const movementArqueoRows = [
+    settledCash ? row('+ Cobros de cuentas (efectivo)', eur(settledCash)) : '',
     movementTotal('cash_in') ? row('+ Entradas de dinero', eur(movementTotal('cash_in'))) : '',
     movementTotal('supplier_payment')
       ? row('− Pagos a proveedores', eur(movementTotal('supplier_payment')))
@@ -288,6 +313,8 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
 
       <h2>Ventas a cuenta</h2>
       <table>${fiadoRows}</table>
+
+      ${settlementRows ? `<h2>Cobros de cuentas <span class="muted">(no son ventas)</span></h2><table>${settlementRows}</table>` : ''}
     </div>
   </div>
 

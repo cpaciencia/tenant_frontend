@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePosStore } from '../../stores/pos'
-import { clients, eur, initials } from '../../data/catalog'
+import { eur } from '../../data/catalog'
+import ClientPicker from './ClientPicker.vue'
+import { useClientsStore } from '../../stores/clients'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/types'
 import TicketReceipt from './TicketReceipt.vue'
 
@@ -15,6 +17,10 @@ const {
   cashGiven,
   mixedCashEur,
   fiadoClient,
+  settleClientId,
+  settleEur,
+  settleAmount,
+  dueTotal,
   total,
   ticket,
   change,
@@ -71,8 +77,28 @@ const visibleMethods = computed(() =>
   isRefund.value ? methods.filter((m) => m.id === 'efectivo' || m.id === 'tarjeta') : methods
 )
 
-/** Card part of a mixed payment (the rest of the total after the cash entered). */
-const mixedCard = computed(() => Math.max(0, total.value - (mixedCashEur.value || 0)))
+/** Card part of a mixed payment (the rest of what is due after the cash entered). */
+const mixedCard = computed(() => Math.max(0, dueTotal.value - (mixedCashEur.value || 0)))
+
+// --- Collect a client's debt with this purchase ---
+const clients = useClientsStore()
+const settleOpen = ref(false)
+const canSettle = computed(() => !isRefund.value && payMethod.value !== 'fiado')
+const settleBalance = computed(() => (clients.get(settleClientId.value)?.balanceCents ?? 0) / 100)
+// Picking a client proposes the whole debt.
+watch(settleClientId, (id) => {
+  settleEur.value = id ? settleBalance.value : null
+})
+function toggleSettle(): void {
+  settleOpen.value = !settleOpen.value
+  if (!settleOpen.value) {
+    settleClientId.value = null
+    settleEur.value = null
+  }
+}
+watch(payOpen, (open) => {
+  if (open) settleOpen.value = false
+})
 
 const cashOptions = [
   { label: 'Exacto', value: -1 },
@@ -120,7 +146,12 @@ const showSuccessChange = computed(() => payChange.value > 0)
             <div class="pay-head__label">
               {{ isRefund ? 'TOTAL A DEVOLVER' : 'TOTAL A COBRAR' }}
             </div>
-            <div class="pay-head__total pos-money">{{ isRefund ? eur(-total) : eur(total) }}</div>
+            <div class="pay-head__total pos-money">
+              {{ isRefund ? eur(-total) : eur(dueTotal) }}
+            </div>
+            <div v-if="settleAmount > 0" class="pay-head__split">
+              Ticket {{ eur(total) }} + cuenta {{ eur(settleAmount) }}
+            </div>
           </div>
           <button class="pay-head__close" @click="store.closePay()">
             <i class="pi pi-times"></i>
@@ -197,7 +228,7 @@ const showSuccessChange = computed(() => payChange.value > 0)
           <div v-else-if="payMethod === 'mixto'" class="pay-mixed">
             <div class="pay-mixed__lead">Reparte el total entre efectivo y tarjeta:</div>
             <label class="pay-mixed__label">Pagado en efectivo</label>
-            <MoneyInput v-model="mixedCashEur" :min="0" :max="total" fluid />
+            <MoneyInput v-model="mixedCashEur" :min="0" :max="dueTotal" fluid />
             <div class="pay-mixed__rest">
               Resto con tarjeta: <strong class="pos-money">{{ eur(mixedCard) }}</strong>
             </div>
@@ -206,29 +237,30 @@ const showSuccessChange = computed(() => payChange.value > 0)
           <!-- A cuenta (credit) -->
           <div v-else-if="payMethod === 'fiado'">
             <div class="pay-fiado__lead">Anotar el importe a la cuenta de:</div>
-            <div class="pay-fiado__list">
-              <button
-                v-for="c in clients"
-                :key="c.id"
-                class="pay-fiado__item"
-                :class="{ 'pay-fiado__item--active': fiadoClient === c.id }"
-                @click="fiadoClient = c.id"
-              >
-                <div class="pay-fiado__who">
-                  <div class="pay-fiado__avatar">{{ initials(c.name) }}</div>
-                  <div class="pay-fiado__text">
-                    <div class="pay-fiado__name">{{ c.name }}</div>
-                    <div class="pay-fiado__detail">{{ c.detail }}</div>
-                  </div>
+            <ClientPicker v-model="fiadoClient" allow-create />
+          </div>
+
+          <!-- Collect a client's debt together with this purchase -->
+          <div v-if="canSettle" class="pay-settle">
+            <button class="pay-settle__toggle" @click="toggleSettle">
+              <i class="pi" :class="settleOpen ? 'pi-minus-circle' : 'pi-plus-circle'"></i>
+              Cobrar también una deuda de un cliente
+            </button>
+            <template v-if="settleOpen">
+              <ClientPicker v-model="settleClientId" debtors-only />
+              <div v-if="settleClientId" class="pay-settle__amount">
+                <label>Importe de la deuda que paga ahora</label>
+                <div class="pay-settle__row">
+                  <MoneyInput v-model="settleEur" :min="0" :max="settleBalance" fluid />
+                  <button class="pay-settle__all" @click="settleEur = settleBalance">
+                    Todo ({{ eur(settleBalance) }})
+                  </button>
                 </div>
-                <div
-                  class="pay-fiado__saldo pos-money"
-                  :style="{ color: c.saldo > 0 ? 'var(--pos-danger)' : 'var(--pos-text-3)' }"
+                <small v-if="(settleEur ?? 0) > settleBalance" class="pay-settle__err"
+                  >No puede pagar más de lo que debe ({{ eur(settleBalance) }}).</small
                 >
-                  {{ c.saldo > 0 ? eur(c.saldo) : 'Sin deuda' }}
-                </div>
-              </button>
-            </div>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -281,6 +313,51 @@ const showSuccessChange = computed(() => payChange.value > 0)
 </template>
 
 <style scoped>
+.pay-head__split {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+.pay-settle {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--pos-border-medium);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pay-settle__toggle {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  color: var(--pos-green-dark);
+  background: transparent;
+  padding: 6px 0;
+}
+.pay-settle__amount label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--pos-text-2);
+}
+.pay-settle__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.pay-settle__all {
+  white-space: nowrap;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--pos-green-soft);
+  color: var(--pos-green-dark);
+  font-weight: 800;
+}
+.pay-settle__err {
+  color: var(--pos-danger);
+  font-weight: 700;
+}
 .pay-mixed {
   display: flex;
   flex-direction: column;
@@ -583,60 +660,6 @@ const showSuccessChange = computed(() => payChange.value > 0)
   font-weight: 700;
   color: var(--pos-text-2);
   margin-bottom: 10px;
-}
-.pay-fiado__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-.pay-fiado__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-radius: 13px;
-  background: #f8fafc;
-  border: 1.5px solid var(--pos-border-subtle);
-  transition: all 0.12s ease;
-}
-.pay-fiado__item--active {
-  background: var(--pos-green-soft);
-  border-color: var(--pos-green);
-}
-.pay-fiado__who {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.pay-fiado__avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: var(--pos-green-soft);
-  color: var(--pos-green-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 14px;
-}
-.pay-fiado__text {
-  text-align: left;
-}
-.pay-fiado__name {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--pos-text);
-}
-.pay-fiado__detail {
-  font-size: 12px;
-  color: var(--pos-text-3);
-}
-.pay-fiado__saldo {
-  font-size: 13px;
-  font-weight: 800;
 }
 
 /* Footer */

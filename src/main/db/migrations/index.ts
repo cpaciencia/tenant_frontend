@@ -477,5 +477,51 @@ export const migrations: Migration[] = [
       `)
     },
     down: async () => {}
+  },
+  {
+    name: '0018-clients-account-payments',
+    up: async ({ context: db }) => {
+      // "A cuenta" clients mirror (pulled; a till may add one offline) and the
+      // payments of their debt (cobros de cuentas): cash/card into the caja of the
+      // day, NOT a sale. remote_balance_cents = what the client owes on OTHER
+      // terminals (from the server); this till adds its own local movements.
+      db.exec(`
+        CREATE TABLE clients (
+          id                   TEXT PRIMARY KEY,
+          name                 TEXT NOT NULL,
+          detail               TEXT,
+          phone                TEXT,
+          active               INTEGER NOT NULL DEFAULT 1,
+          remote_balance_cents INTEGER NOT NULL DEFAULT 0,
+          updated_at           TEXT NOT NULL
+        );
+        CREATE TABLE account_payments (
+          id               TEXT PRIMARY KEY,
+          payment_number   TEXT NOT NULL UNIQUE,
+          terminal_id      TEXT NOT NULL,
+          payment_year     INTEGER NOT NULL,
+          payment_sequence INTEGER NOT NULL,
+          client_id        TEXT NOT NULL,
+          client_name      TEXT NOT NULL,
+          cash_cents       INTEGER NOT NULL,
+          card_cents       INTEGER NOT NULL,
+          total_cents      INTEGER NOT NULL,
+          cash_session_id  TEXT NOT NULL,
+          sale_id          TEXT,
+          user_id          TEXT,
+          user_name        TEXT NOT NULL,
+          note             TEXT,
+          created_at       TEXT NOT NULL,
+          UNIQUE (terminal_id, payment_year, payment_sequence)
+        );
+        CREATE INDEX idx_account_payments_session ON account_payments (cash_session_id);
+        CREATE INDEX idx_account_payments_client ON account_payments (client_id);
+        CREATE INDEX idx_sales_client ON sales (client_id);
+        ALTER TABLE cash_sessions ADD COLUMN settlements_json TEXT NOT NULL DEFAULT '[]';
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS account_payments; DROP TABLE IF EXISTS clients;')
+    }
   }
 ]

@@ -6,7 +6,8 @@ import type {
   FloatAdjustment,
   SellerTotal,
   Tenders,
-  ZBreakdownRow
+  ZBreakdownRow,
+  AccountPayment
 } from '../../shared/types'
 
 interface SessionRow {
@@ -39,6 +40,7 @@ interface SessionRow {
   sellers_json: string
   float_adjustments_json: string
   movements_json: string
+  settlements_json: string
 }
 
 function parseTenders(json: string): Tenders {
@@ -93,7 +95,8 @@ function mapRow(r: SessionRow): CashSession {
     fiados: parseList<FiadoEntry>(r.fiados_json),
     sellers: parseList<SellerTotal>(r.sellers_json),
     floatAdjustments: parseList<FloatAdjustment>(r.float_adjustments_json),
-    cashMovements: parseList<CashMovement>(r.movements_json)
+    cashMovements: parseList<CashMovement>(r.movements_json),
+    settlements: parseList<AccountPayment>(r.settlements_json)
   }
 }
 
@@ -103,7 +106,7 @@ const SELECT = `SELECT id, terminal_id, shift_id, shift_name, business_date, cas
                        closed_by_user_id, closed_by_name, expected_cash_cents, counted_cash_cents,
                        difference_cents, closing_float_cents, z_number, sales_count, total_cents,
                        tenders_json, breakdown_json, fiados_json, sellers_json,
-                       float_adjustments_json, movements_json
+                       float_adjustments_json, movements_json, settlements_json
                   FROM cash_sessions`
 
 export interface InsertSessionInput {
@@ -231,6 +234,7 @@ export interface CloseSessionFields {
   fiados: FiadoEntry[]
   sellers: SellerTotal[]
   cashMovements: CashMovement[]
+  settlements: AccountPayment[]
 }
 
 /** Next fiscal cierre number for a terminal (MAX(z_number)+1 over closed cajas). */
@@ -262,7 +266,8 @@ export function closeSessionRow(db: DB, id: string, f: CloseSessionFields): void
             breakdown_json = @breakdownJson,
             fiados_json = @fiadosJson,
             sellers_json = @sellersJson,
-            movements_json = @movementsJson
+            movements_json = @movementsJson,
+            settlements_json = @settlementsJson
       WHERE id = @id`
   ).run({
     id,
@@ -280,6 +285,7 @@ export function closeSessionRow(db: DB, id: string, f: CloseSessionFields): void
     breakdownJson: JSON.stringify(f.breakdown),
     fiadosJson: JSON.stringify(f.fiados),
     sellersJson: JSON.stringify(f.sellers),
-    movementsJson: JSON.stringify(f.cashMovements)
+    movementsJson: JSON.stringify(f.cashMovements),
+    settlementsJson: JSON.stringify(f.settlements)
   })
 }

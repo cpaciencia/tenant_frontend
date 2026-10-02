@@ -28,6 +28,7 @@ import {
   summarizeCashMovements
 } from '../repositories/cashMovements'
 import { insertMovementInTxn } from './cashMovements'
+import { listSessionPayments, summarizeSettlements } from './accountPayments'
 import {
   insertOpenSession,
   getOpenSessions,
@@ -398,6 +399,7 @@ export function previewSessionArqueo(db: DB, sessionId: string): SessionArqueo {
   }
   const agg = aggregateSession(db, sessionId)
   const movements = summarizeCashMovements(listCashMovements(db, sessionId))
+  const settlements = summarizeSettlements(listSessionPayments(db, sessionId))
   return {
     sessionId,
     shiftName: session.shiftName,
@@ -412,8 +414,12 @@ export function previewSessionArqueo(db: DB, sessionId: string): SessionArqueo {
     fiados: agg.fiados,
     sellers: agg.sellers,
     movements,
+    settlements,
     expectedCashCents:
-      session.openingFloatCents + agg.tenders.cashCents + drawerEffectCents(movements)
+      session.openingFloatCents +
+      agg.tenders.cashCents +
+      settlements.cashCents +
+      drawerEffectCents(movements)
   }
 }
 
@@ -473,8 +479,13 @@ export function closeCashSession(
     }
     const agg = aggregateSession(db, req.sessionId)
     const movements = summarizeCashMovements(listCashMovements(db, req.sessionId))
+    // Debt payments in cash are money in the drawer (but not sales).
+    const settlements = summarizeSettlements(listSessionPayments(db, req.sessionId))
     const expectedCashCents =
-      session.openingFloatCents + agg.tenders.cashCents + drawerEffectCents(movements)
+      session.openingFloatCents +
+      agg.tenders.cashCents +
+      settlements.cashCents +
+      drawerEffectCents(movements)
     const countedCashCents = Math.round(req.countedCashCents)
     const closingFloatCents = Math.max(0, Math.round(req.closingFloatCents))
 
@@ -493,7 +504,8 @@ export function closeCashSession(
       breakdown: agg.breakdown,
       fiados: agg.fiados,
       sellers: agg.sellers,
-      cashMovements: movements.list
+      cashMovements: movements.list,
+      settlements: settlements.list
     })
 
     const closed = getSessionById(db, req.sessionId)!

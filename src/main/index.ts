@@ -15,6 +15,7 @@ import { pullCategories } from './sync/categoryPull'
 import { pullProducts } from './sync/productPull'
 import { pullAccountingGroups } from './sync/accountingGroupPull'
 import { pullSuppliers } from './sync/supplierPull'
+import { pullClients } from './sync/clientPull'
 import { setTerminalToken } from './sync/terminalAuth'
 import { createEnrollmentClient } from './enrollment/client'
 import { createSafeStorageCredentialStore } from './enrollment/safeStorageStore'
@@ -119,6 +120,9 @@ app.whenReady().then(async () => {
     })
     pullProducts(db, baseUrl, undefined, { full: true }).catch(() => {
       /* offline — the grid uses whatever products the mirror already holds */
+    })
+    pullClients(db, baseUrl).catch(() => {
+      /* offline — balances come from the mirror plus this till's own movements */
     })
     pullSuppliers(db, baseUrl).catch(() => {
       /* offline — payments pick from the suppliers the mirror already holds */

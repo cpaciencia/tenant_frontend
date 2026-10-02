@@ -4,6 +4,8 @@ import type { CartItemInput, CreateSaleRequest, Sale } from '../../shared/types'
 import { getSessionById } from '../repositories/cashSessions'
 import { insertPendingItem } from '../repositories/pendingItems'
 import { recordAuditEvent } from '../repositories/auditEvents'
+import { getClient } from '../repositories/clients'
+import { insertPaymentInTxn } from './accountPayments'
 
 /** A sale line as stored/synced: manual lines carry the id of their pending item. */
 type StoredItem = CartItemInput & { pendingItemId?: string }
@@ -34,10 +36,23 @@ export function createSale(db: DB, terminalId: string, input: CreateSaleRequest)
   const year = new Date().getFullYear()
   const totalCents = input.items.reduce((sum, item) => sum + item.quantity * item.unitPriceCents, 0)
 
-  const payment = input.payment
+  const payment = { ...input.payment }
   const paid = payment.cashCents + payment.cardCents + payment.creditCents
   if (paid !== totalCents) {
     throw new Error(`Payment (${paid}) does not match the sale total (${totalCents})`)
+  }
+  // "A cuenta" needs a real client: the debt is tied to it (and named from it).
+  if (payment.creditCents !== 0) {
+    const client = payment.clientId ? getClient(db, payment.clientId) : null
+    if (!client) throw new Error('Elige el cliente al que se anota la cuenta')
+    payment.clientName = client.name
+  } else {
+    payment.clientId = null
+    payment.clientName = null
+  }
+  const settlement = input.settlement ?? null
+  if (settlement && (payment.creditCents !== 0 || totalCents < 0)) {
+    throw new Error('No se puede cobrar una deuda en una venta a cuenta o en una devolución')
   }
 
   // A sale must belong to an OPEN caja (cash session) — no open caja, no sale. The
@@ -172,6 +187,17 @@ export function createSale(db: DB, terminalId: string, input: CreateSaleRequest)
         creditCents: payment.creditCents
       }
     })
+
+    // A client's debt paid in the same go: its own account payment (not the sale).
+    if (settlement) {
+      record.settlement = insertPaymentInTxn(
+        db,
+        terminalId,
+        session.id,
+        { ...settlement, actor: seller, saleId: id },
+        new Date(createdAt)
+      )
+    }
 
     return record
   })
