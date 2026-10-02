@@ -189,4 +189,28 @@ describe('cash movements', () => {
       'server-makro'
     )
   })
+
+  it('a payment without invoice needs who and what for, needs no invoice and lowers the cash', () => {
+    expect(() =>
+      recordCashMovement(db, 'T01', {
+        kind: 'other_payment',
+        amountCents: 3000,
+        supplier: 'Juan (jardinero)',
+        actor: ana
+      })
+    ).toThrow(/concepto/)
+    const pay = recordCashMovement(db, 'T01', {
+      kind: 'other_payment',
+      amountCents: 3000,
+      supplier: 'Juan (jardinero)',
+      note: 'Poda setos',
+      actor: ana
+    })
+    expect(pay.invoiceStatus).toBeNull()
+    expect(pay.supplierId).toBeNull()
+    expect(listSuppliers(db)).toHaveLength(0)
+    const arqueo = previewSessionArqueo(db, sid)
+    expect(arqueo.movements.otherPaymentsCents).toBe(3000)
+    expect(arqueo.expectedCashCents).toBe(15000 + 1000 - 3000)
+  })
 })

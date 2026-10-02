@@ -73,6 +73,7 @@ export function summarizeCashMovements(list: CashMovement[]): CashMovementsSumma
     cashInCents,
     cashOutCents,
     supplierPaymentsCents: sum('supplier_payment'),
+    otherPaymentsCents: sum('other_payment'),
     cashInPendingCents: Math.max(0, cashInCents - cashOutCents),
     invoicesPending: list.filter((m) => m.invoiceStatus === 'pending').length,
     list
@@ -81,7 +82,12 @@ export function summarizeCashMovements(list: CashMovement[]): CashMovementsSumma
 
 /** Net effect of the movements on the cash in the drawer. */
 export function drawerEffectCents(summary: CashMovementsSummary): number {
-  return summary.cashInCents - summary.supplierPaymentsCents - summary.cashOutCents
+  return (
+    summary.cashInCents -
+    summary.supplierPaymentsCents -
+    summary.otherPaymentsCents -
+    summary.cashOutCents
+  )
 }
 
 export function getCashMovement(db: DB, id: string): CashMovement | null {

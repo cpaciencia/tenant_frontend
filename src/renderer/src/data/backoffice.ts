@@ -32,69 +32,134 @@ export interface PayBreakdownRow {
   color: string
 }
 
+export type NavGroupId = 'ventas' | 'compras' | 'catalogo' | 'equipo' | 'sistema'
+
+/** Sidebar groups, in order. A group with a single visible item shows it un-nested. */
+export const navGroups: { id: NavGroupId; label: string; icon: string }[] = [
+  { id: 'ventas', label: 'Ventas', icon: 'pi-chart-line' },
+  { id: 'compras', label: 'Compras', icon: 'pi-truck' },
+  { id: 'catalogo', label: 'Catálogo', icon: 'pi-box' },
+  { id: 'equipo', label: 'Equipo', icon: 'pi-users' },
+  { id: 'sistema', label: 'Sistema', icon: 'pi-cog' }
+]
+
 export interface NavItem {
   id: string
   label: string
   icon: string
+  group: NavGroupId
   /** Permission(s) that grant access to this section (ANY). Empty = always shown. */
   permissions?: string[]
 }
 
 export const navItems: NavItem[] = [
-  { id: 'ventas', label: 'Cajas y cierres', icon: 'pi-calculator', permissions: ['sale:read'] },
-  { id: 'actividad', label: 'Actividad', icon: 'pi-history', permissions: ['activity:read'] },
-  { id: 'tickets', label: 'Tickets', icon: 'pi-receipt', permissions: ['sale:read'] },
+  {
+    id: 'ventas',
+    label: 'Cajas y cierres',
+    icon: 'pi-calculator',
+    group: 'ventas',
+    permissions: ['sale:read']
+  },
+  {
+    id: 'tickets',
+    label: 'Tickets',
+    icon: 'pi-receipt',
+    group: 'ventas',
+    permissions: ['sale:read']
+  },
+  {
+    id: 'actividad',
+    label: 'Actividad',
+    icon: 'pi-history',
+    group: 'ventas',
+    permissions: ['activity:read']
+  },
+  {
+    id: 'clientes',
+    label: 'Clientes',
+    icon: 'pi-id-card',
+    group: 'ventas',
+    permissions: ['client:read']
+  },
   {
     id: 'proveedores',
     label: 'Proveedores',
     icon: 'pi-truck',
+    group: 'compras',
     permissions: ['supplier:manage', 'invoice:read']
   },
   {
     id: 'facturas',
-    label: 'Facturas proveedores',
+    label: 'Facturas',
     icon: 'pi-file',
+    group: 'compras',
     permissions: ['invoice:read']
   },
-  { id: 'productos', label: 'Productos', icon: 'pi-box', permissions: ['product:read'] },
+  {
+    id: 'productos',
+    label: 'Productos',
+    icon: 'pi-box',
+    group: 'catalogo',
+    permissions: ['product:read']
+  },
   {
     id: 'categorias',
     label: 'Categorías',
     icon: 'pi-sitemap',
+    group: 'catalogo',
     permissions: ['category:read']
   },
   {
     id: 'cajas',
     label: 'Grupos contables',
     icon: 'pi-wallet',
+    group: 'catalogo',
     permissions: ['accounting_group:read']
   },
-  { id: 'usuarios', label: 'Usuarios', icon: 'pi-users', permissions: ['user:read'] },
-  { id: 'roles', label: 'Roles y permisos', icon: 'pi-shield', permissions: ['role:read'] },
-  { id: 'stock', label: 'Stock', icon: 'pi-server', permissions: ['stock:read'] },
-  { id: 'clientes', label: 'Clientes', icon: 'pi-id-card', permissions: ['client:read'] },
+  {
+    id: 'stock',
+    label: 'Stock',
+    icon: 'pi-server',
+    group: 'catalogo',
+    permissions: ['stock:read']
+  },
+  {
+    id: 'usuarios',
+    label: 'Usuarios',
+    icon: 'pi-users',
+    group: 'equipo',
+    permissions: ['user:read']
+  },
+  {
+    id: 'roles',
+    label: 'Roles y permisos',
+    icon: 'pi-shield',
+    group: 'equipo',
+    permissions: ['role:read']
+  },
   {
     id: 'configuracion',
     label: 'Configuración',
     icon: 'pi-cog',
+    group: 'sistema',
     permissions: ['settings:read']
   }
 ]
 
 /** Breadcrumb + title per section. */
 export const sectionTitles: Record<string, [string, string]> = {
-  ventas: ['INFORMES', 'Cajas y cierres'],
-  actividad: ['INFORMES', 'Actividad de los TPV'],
-  tickets: ['INFORMES', 'Histórico de tickets'],
-  facturas: ['INFORMES', 'Facturas de proveedores'],
+  ventas: ['VENTAS', 'Cajas y cierres'],
+  actividad: ['VENTAS', 'Actividad de los TPV'],
+  tickets: ['VENTAS', 'Histórico de tickets'],
+  facturas: ['COMPRAS', 'Facturas de proveedores'],
   proveedores: ['COMPRAS', 'Proveedores'],
   productos: ['CATÁLOGO', 'Productos'],
   categorias: ['CATÁLOGO', 'Categorías y subcategorías'],
   cajas: ['CATÁLOGO', 'Grupos contables'],
   usuarios: ['EQUIPO', 'Usuarios y empleados'],
   roles: ['EQUIPO', 'Roles y permisos'],
-  stock: ['ALMACÉN', 'Control de stock'],
-  clientes: ['CRM', 'Clientes y cuentas'],
+  stock: ['CATÁLOGO', 'Control de stock'],
+  clientes: ['VENTAS', 'Clientes y cuentas'],
   configuracion: ['SISTEMA', 'Configuración del puesto']
 }
 

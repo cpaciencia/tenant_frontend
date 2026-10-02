@@ -268,6 +268,8 @@ export function describeEvent(type: string, data: Data): string {
         .filter(Boolean)
         .join(' · ')
       const tail = extra ? ` (${extra})` : ''
+      if (data.kind === 'other_payment')
+        return `Pagó ${amount} SIN FACTURA a ${str(data.supplier)}${tail}`
       if (data.kind === 'supplier_payment')
         return `Pagó ${amount} al proveedor ${str(data.supplier)}${tail}`
       if (data.kind === 'cash_in') return `Metió ${amount} en la caja${tail}`

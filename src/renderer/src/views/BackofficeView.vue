@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { navItems, sectionTitles } from '../data/backoffice'
+import { navGroups, navItems, sectionTitles, type NavGroupId } from '../data/backoffice'
 import VentasSection from '../components/backoffice/VentasSection.vue'
 import ActividadSection from '../components/backoffice/ActividadSection.vue'
 import TicketsSection from '../components/backoffice/TicketsSection.vue'
@@ -46,6 +46,41 @@ const visibleNav = computed(() =>
     : navItems
 )
 
+/** Sidebar groups with their visible items (empty groups hidden). */
+const visibleGroups = computed(() =>
+  navGroups
+    .map((g) => ({ ...g, items: visibleNav.value.filter((n) => n.group === g.id) }))
+    .filter((g) => g.items.length > 0)
+)
+
+// Collapsed groups are a per-viewer convenience (browser storage, may be unavailable).
+const COLLAPSED_KEY = 'backoffice.collapsedGroups'
+function readCollapsed(): NavGroupId[] {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY)
+    return raw ? (JSON.parse(raw) as NavGroupId[]) : []
+  } catch {
+    return []
+  }
+}
+const collapsed = ref<NavGroupId[]>(readCollapsed())
+
+function toggleGroup(id: NavGroupId): void {
+  collapsed.value = collapsed.value.includes(id)
+    ? collapsed.value.filter((g) => g !== id)
+    : [...collapsed.value, id]
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed.value))
+  } catch {
+    // storage unavailable: the toggle still works for this session
+  }
+}
+
+/** The group holding the open section is always shown expanded. */
+function isOpen(group: { id: NavGroupId; items: { id: string }[] }): boolean {
+  return !collapsed.value.includes(group.id) || group.items.some((n) => n.id === section.value)
+}
+
 const section = computed(() => {
   const s = String(route.params.section)
   return s in sections ? (s as keyof typeof sections) : 'ventas'
@@ -74,15 +109,34 @@ function goPos(): void {
         </div>
       </div>
       <nav class="bo__nav">
-        <button
-          v-for="n in visibleNav"
-          :key="n.id"
-          class="bo__nav-item"
-          :class="{ 'bo__nav-item--active': section === n.id }"
-          @click="go(n.id)"
-        >
-          <i class="pi bo__nav-icon" :class="n.icon"></i> {{ n.label }}
-        </button>
+        <template v-for="g in visibleGroups" :key="g.id">
+          <!-- A group with one item: show the item directly. -->
+          <button
+            v-if="g.items.length === 1"
+            class="bo__nav-item"
+            :class="{ 'bo__nav-item--active': section === g.items[0].id }"
+            @click="go(g.items[0].id)"
+          >
+            <i class="pi bo__nav-icon" :class="g.items[0].icon"></i> {{ g.items[0].label }}
+          </button>
+          <div v-else class="bo__group">
+            <button class="bo__group-head" :aria-expanded="isOpen(g)" @click="toggleGroup(g.id)">
+              <span>{{ g.label }}</span>
+              <i class="pi" :class="isOpen(g) ? 'pi-chevron-down' : 'pi-chevron-right'"></i>
+            </button>
+            <template v-if="isOpen(g)">
+              <button
+                v-for="n in g.items"
+                :key="n.id"
+                class="bo__nav-item"
+                :class="{ 'bo__nav-item--active': section === n.id }"
+                @click="go(n.id)"
+              >
+                <i class="pi bo__nav-icon" :class="n.icon"></i> {{ n.label }}
+              </button>
+            </template>
+          </div>
+        </template>
       </nav>
       <button class="bo__back" @click="goPos">
         <i class="pi pi-shopping-cart bo__nav-icon"></i> Volver a la caja
@@ -146,14 +200,41 @@ function goPos(): void {
 .bo__nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.bo__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.bo__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 4px;
+  background: transparent;
+  color: #6f9a80;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.bo__group-head:hover {
+  color: #fff;
+}
+.bo__group-head .pi {
+  font-size: 10px;
 }
 .bo__nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 13px 14px;
+  padding: 10px 14px;
   border-radius: 11px;
   font-size: 14px;
   font-weight: 700;

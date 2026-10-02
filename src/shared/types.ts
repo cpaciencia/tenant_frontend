@@ -214,11 +214,13 @@ export interface FiadoEntry {
 
 /**
  * Cash moved in/out of the drawer that is not a sale:
- * - `supplier_payment`: paying a supplier from the drawer.
+ * - `supplier_payment`: paying a supplier from the drawer (its invoice is mandatory).
+ * - `other_payment`: paying someone who issues no invoice (a gardener, an odd job):
+ *   who (`supplier`, free text) and what for (`note`) are mandatory.
  * - `cash_in`: money put INTO the drawer from outside (e.g. to pay a supplier).
  * - `cash_out`: money taken out of the drawer (e.g. giving back what was put in).
  */
-export type CashMovementKind = 'supplier_payment' | 'cash_in' | 'cash_out'
+export type CashMovementKind = 'supplier_payment' | 'other_payment' | 'cash_in' | 'cash_out'
 
 export interface CashMovement {
   id: string
@@ -271,6 +273,8 @@ export interface CashMovementsSummary {
   cashInCents: number
   cashOutCents: number
   supplierPaymentsCents: number
+  /** Payments without invoice (`other_payment`). */
+  otherPaymentsCents: number
   /** cash_in − cash_out: money put in that still has to be taken out. */
   cashInPendingCents: number
   /** Supplier payments whose invoice is not on the server yet (block the cierre). */

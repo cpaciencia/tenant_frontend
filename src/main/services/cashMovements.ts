@@ -17,7 +17,7 @@ import {
 import { findOrCreateSupplier, getSupplier } from '../repositories/suppliers'
 import { recordAuditEvent } from '../repositories/auditEvents'
 
-const KINDS: CashMovementKind[] = ['supplier_payment', 'cash_in', 'cash_out']
+const KINDS: CashMovementKind[] = ['supplier_payment', 'other_payment', 'cash_in', 'cash_out']
 
 /**
  * Record cash moved in/out of the drawer that is not a sale (supplier payment,
@@ -47,6 +47,11 @@ export function insertMovementInTxn(
     const resolved = picked ?? findOrCreateSupplier(db, name, req.actor.name, now)
     supplierId = resolved.id
     supplier = resolved.name
+  } else if (req.kind === 'other_payment') {
+    // No invoice exists for these, so who was paid and what for are mandatory.
+    supplier = req.supplier?.trim() || null
+    if (!supplier) throw new Error('Indica a quién se paga')
+    if (!req.note?.trim()) throw new Error('Indica el concepto del pago')
   }
   const movement: CashMovement = {
     id: uuidv7(),

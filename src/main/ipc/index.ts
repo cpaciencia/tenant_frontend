@@ -424,7 +424,7 @@ export function registerDbHandlers(
       if (typeof v !== 'string' || v.length > max) throw new Error('Invalid cash movement text')
       return v
     }
-    if (!['supplier_payment', 'cash_in', 'cash_out'].includes(String(r.kind))) {
+    if (!['supplier_payment', 'other_payment', 'cash_in', 'cash_out'].includes(String(r.kind))) {
       throw new Error('Invalid cash movement kind')
     }
     if (!Number.isInteger(r.amountCents) || (r.amountCents as number) <= 0) {

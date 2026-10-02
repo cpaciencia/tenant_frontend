@@ -191,6 +191,10 @@ async function savePdf(): Promise<void> {
             <span>+ Entradas de dinero</span
             ><b class="pos-money">{{ eur(arqueo.movements.cashInCents / 100) }}</b>
           </div>
+          <div v-if="arqueo.movements.otherPaymentsCents" class="cc-row">
+            <span>− Pagos sin factura</span
+            ><b class="pos-money">{{ eur(arqueo.movements.otherPaymentsCents / 100) }}</b>
+          </div>
           <div v-if="arqueo.movements.supplierPaymentsCents" class="cc-row">
             <span>− Pagos a proveedores</span
             ><b class="pos-money">{{ eur(arqueo.movements.supplierPaymentsCents / 100) }}</b>

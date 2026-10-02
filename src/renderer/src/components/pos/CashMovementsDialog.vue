@@ -5,6 +5,7 @@
  *   note/invoice nº, note). Its invoice MUST end up on the server: upload a file
  *   here, show a QR to upload it from a phone, or "más tarde" — but the caja can't
  *   be closed while any is missing.
+ * - "Pago sin factura": paying someone who gives no invoice (who + concept required).
  * - "Entrada de dinero": money put into the drawer (e.g. to pay a supplier).
  * - "Retirada de dinero": money taken out of the drawer.
  * All of them count in the arqueo, are sealed into the cierre and audited. What is
@@ -34,6 +35,12 @@ const KINDS: { id: CashMovementKind; label: string; icon: string; hint: string }
     hint: 'Sale dinero del cajón para pagar a un proveedor. Después hay que subir su factura.'
   },
   {
+    id: 'other_payment',
+    label: 'Pago sin factura',
+    icon: 'pi-user',
+    hint: 'Pagas a alguien que no da factura (p. ej. un jardinero). Indica a quién y por qué.'
+  },
+  {
     id: 'cash_in',
     label: 'Entrada de dinero',
     icon: 'pi-arrow-down',
@@ -48,6 +55,7 @@ const KINDS: { id: CashMovementKind; label: string; icon: string; hint: string }
 ]
 const KIND_LABEL: Record<CashMovementKind, string> = {
   supplier_payment: 'Pago a proveedor',
+  other_payment: 'Pago sin factura',
   cash_in: 'Entrada de dinero',
   cash_out: 'Retirada de dinero'
 }
@@ -116,6 +124,10 @@ async function save(): Promise<void> {
     error.value = 'Indica el importe.'
     return
   }
+  if (kind.value === 'other_payment' && (!supplier.value.trim() || !note.value.trim())) {
+    error.value = 'Indica a quién se paga y el concepto.'
+    return
+  }
   if (kind.value === 'supplier_payment' && !supplier.value.trim()) {
     error.value = 'Indica el proveedor.'
     return
@@ -127,7 +139,7 @@ async function save(): Promise<void> {
       kind: kind.value,
       amountCents: Math.round(amountEur.value * 100),
       supplierId: isSupplier ? (matchedSupplier.value?.id ?? null) : null,
-      supplier: isSupplier ? supplier.value.trim() : null,
+      supplier: isSupplier || kind.value === 'other_payment' ? supplier.value.trim() : null,
       document: document.value.trim() || null,
       note: note.value.trim() || null,
       actor: store.actor()
@@ -229,7 +241,21 @@ async function onInvoiceUploaded(): Promise<void> {
             <InputText id="cm-doc" v-model="document" fluid />
           </template>
 
-          <label class="cm-label" for="cm-note">Nota <small>(opcional)</small></label>
+          <template v-if="kind === 'other_payment'">
+            <label class="cm-label" for="cm-payee">A quién se paga</label>
+            <InputText
+              id="cm-payee"
+              v-model="supplier"
+              autocomplete="off"
+              placeholder="p. ej. Juan (jardinero)"
+              fluid
+            />
+          </template>
+
+          <label class="cm-label" for="cm-note"
+            >{{ kind === 'other_payment' ? 'Concepto' : 'Nota' }}
+            <small v-if="kind !== 'other_payment'">(opcional)</small></label
+          >
           <InputText id="cm-note" v-model="note" fluid @keydown.enter="save" />
         </div>
 
@@ -334,7 +360,7 @@ async function onInvoiceUploaded(): Promise<void> {
 }
 .cm-kinds {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 .cm-kind {

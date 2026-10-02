@@ -83,6 +83,7 @@ export function installWebPlatformShim(): void {
         cashInCents: 0,
         cashOutCents: 0,
         supplierPaymentsCents: 0,
+        otherPaymentsCents: 0,
         cashInPendingCents: 0,
         invoicesPending: 0,
         list: []

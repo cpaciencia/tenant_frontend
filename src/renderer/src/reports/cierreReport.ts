@@ -118,6 +118,7 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
     movements.filter((m) => m.kind === kind).reduce((n, m) => n + m.amountCents, 0)
   const MOVEMENT_LABEL: Record<string, string> = {
     supplier_payment: 'Pago a proveedor',
+    other_payment: 'Pago sin factura',
     cash_in: 'Entrada de dinero',
     cash_out: 'Retirada de dinero'
   }
@@ -125,6 +126,9 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
     movementTotal('cash_in') ? row('+ Entradas de dinero', eur(movementTotal('cash_in'))) : '',
     movementTotal('supplier_payment')
       ? row('− Pagos a proveedores', eur(movementTotal('supplier_payment')))
+      : '',
+    movementTotal('other_payment')
+      ? row('− Pagos sin factura', eur(movementTotal('other_payment')))
       : '',
     movementTotal('cash_out') ? row('− Retiradas de dinero', eur(movementTotal('cash_out'))) : ''
   ].join('')
