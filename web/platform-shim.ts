@@ -93,6 +93,13 @@ export function installWebPlatformShim(): void {
         throw new Error('Solo en el terminal de venta')
       }
     },
+    internal: {
+      accounts: async (): Promise<never[]> => [],
+      staff: async (): Promise<never[]> => [],
+      record: async (): Promise<never> => {
+        throw new Error('Solo en el terminal de venta')
+      }
+    },
     // "A cuenta" clients at the till (the web backoffice uses /api/clients).
     clients: {
       list: async (): Promise<never[]> => [],

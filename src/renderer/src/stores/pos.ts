@@ -16,7 +16,7 @@ import type {
   Sale
 } from '../../../shared/types'
 
-export type PayMethod = 'efectivo' | 'tarjeta' | 'mixto' | 'fiado'
+export type PayMethod = 'efectivo' | 'tarjeta' | 'mixto' | 'fiado' | 'interno'
 
 export interface TicketLine {
   key: string
@@ -144,6 +144,17 @@ export const usePosStore = defineStore('pos', () => {
   /** For mixed payment: how much of the total is paid in cash (euros); rest on card. */
   const mixedCashEur = ref(0)
   const fiadoClient = ref<string | null>(null)
+  /** Internal consumption: account, who takes the goods (mandatory) and why. */
+  const internalAccountId = ref<string | null>(null)
+  const internalTakenBy = ref('')
+  const internalReason = ref('')
+  /** Who-took-it list (staff) and accounts, loaded when the payment opens. */
+  const internalAccounts = ref<{ id: string; name: string }[]>([])
+  const staffNames = ref<string[]>([])
+  /** Only catalog products can go as internal consumption. */
+  const internalAllowed = computed(() => !ticket.value.some((l) => l.manual))
+  /** Last internal consumption number (shown instead of a ticket number). */
+  const lastConsumptionNumber = ref('')
   /** A client's debt collected together with this purchase (optional). */
   const settleClientId = ref<string | null>(null)
   const settleEur = ref<number | null>(null)
@@ -497,9 +508,26 @@ export const usePosStore = defineStore('pos', () => {
     fiadoClient.value = null
     settleClientId.value = null
     settleEur.value = null
+    internalAccountId.value = null
+    internalTakenBy.value = ''
+    internalReason.value = ''
+    lastConsumptionNumber.value = ''
     payDone.value = false
     payError.value = ''
     void useClientsStore().load()
+    void loadInternalLists()
+  }
+
+  async function loadInternalLists(): Promise<void> {
+    try {
+      ;[internalAccounts.value, staffNames.value] = await Promise.all([
+        window.api.internal.accounts(),
+        window.api.internal.staff()
+      ])
+    } catch {
+      internalAccounts.value = []
+      staffNames.value = []
+    }
   }
 
   function closePay(): void {
@@ -552,6 +580,8 @@ export const usePosStore = defineStore('pos', () => {
     if (isRefund.value) return payMethod.value === 'efectivo' || payMethod.value === 'tarjeta'
     if (payMethod.value === 'efectivo') return cashOk.value
     if (payMethod.value === 'fiado') return !!fiadoClient.value
+    if (payMethod.value === 'interno')
+      return internalAllowed.value && !!internalAccountId.value && !!internalTakenBy.value.trim()
     if (payMethod.value === 'mixto')
       return mixedCashEur.value >= 0 && mixedCashEur.value <= dueTotal.value
     return true
@@ -629,6 +659,10 @@ export const usePosStore = defineStore('pos', () => {
     if (!confirmEnabled.value || paying.value) return
     if (!currentSession.value) {
       payError.value = 'No hay una caja abierta.'
+      return
+    }
+    if (payMethod.value === 'interno') {
+      await confirmInternal()
       return
     }
     const t = total.value
@@ -715,6 +749,45 @@ export const usePosStore = defineStore('pos', () => {
     payDone.value = true
   }
 
+  /**
+   * The open ticket leaves as internal consumption (not a sale): no money, own
+   * numbering, who takes it recorded. Then the ticket is cleared like a sale.
+   */
+  async function confirmInternal(): Promise<void> {
+    paying.value = true
+    payError.value = ''
+    try {
+      const record = await window.api.internal.record({
+        items: ticket.value.map((l) => ({
+          productId: l.id,
+          name: l.name,
+          quantity: l.qty,
+          unitPriceCents: Math.round(l.price * 100)
+        })),
+        accountId: internalAccountId.value!,
+        takenByName: internalTakenBy.value.trim(),
+        reason: internalReason.value.trim() || null,
+        cashSessionId: currentSession.value!.id,
+        draftId: draftId.value,
+        actor: actor()
+      })
+      lastConsumptionNumber.value = record.consumptionNumber
+      lastTicketNumber.value = record.consumptionNumber
+      lastSale.value = null
+      payChange.value = 0
+      payResultLabel.value = `Consumo interno · ${record.accountName} · se lo lleva ${record.takenByName} (no es venta)`
+      payDone.value = true
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+          : ''
+      payError.value = msg || 'No se pudo registrar el consumo interno.'
+    } finally {
+      paying.value = false
+    }
+  }
+
   /** Clears everything and closes the modal, ready for the next sale. */
   function newTicket(): void {
     clearTicket()
@@ -764,6 +837,13 @@ export const usePosStore = defineStore('pos', () => {
     fiadoClient,
     settleClientId,
     settleEur,
+    internalAccountId,
+    internalTakenBy,
+    internalReason,
+    internalAccounts,
+    staffNames,
+    internalAllowed,
+    lastConsumptionNumber,
     settleAmount,
     settleValid,
     dueTotal,

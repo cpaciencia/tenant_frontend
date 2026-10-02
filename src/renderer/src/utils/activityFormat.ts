@@ -13,6 +13,7 @@ export type ActivityGroup =
   | 'cajas'
   | 'accesos'
   | 'pendientes'
+  | 'interno'
 
 export type Tone = 'ok' | 'info' | 'warn' | 'danger' | 'muted'
 
@@ -30,6 +31,12 @@ export const EVENT_TYPES: Record<string, TypeMeta> = {
     icon: 'pi-wallet',
     group: 'ventas',
     tone: 'ok'
+  },
+  'internal_consumption.recorded': {
+    label: 'Consumo interno',
+    icon: 'pi-home',
+    group: 'interno',
+    tone: 'warn'
   },
   'client.created': {
     label: 'Cliente nuevo',
@@ -147,7 +154,8 @@ export const ACTIVITY_GROUPS: { id: ActivityGroup; label: string; icon: string }
   { id: 'deshechos', label: 'Deshecho antes de cobrar', icon: 'pi-undo' },
   { id: 'cajas', label: 'Cajas', icon: 'pi-wallet' },
   { id: 'accesos', label: 'Accesos', icon: 'pi-sign-in' },
-  { id: 'pendientes', label: 'Pendientes', icon: 'pi-inbox' }
+  { id: 'pendientes', label: 'Pendientes', icon: 'pi-inbox' },
+  { id: 'interno', label: 'Consumo interno', icon: 'pi-home' }
 ]
 
 /** Event types of one group (for the quick filters). */
@@ -210,6 +218,14 @@ export function describeEvent(type: string, data: Data): string {
         .filter(Boolean)
         .join(' + ')
       return `Cobró ${eurCents(num(data.totalCents))} de la cuenta de ${str(data.clientName)} (${how})${data.withSale ? ' junto con una compra' : ''} · debía ${eurCents(num(data.balanceBeforeCents))}, queda ${eurCents(num(data.balanceAfterCents))} · ${str(data.paymentNumber)}`
+    }
+    case 'internal_consumption.recorded': {
+      const items = Array.isArray(data.items)
+        ? (data.items as { name?: unknown; quantity?: unknown }[])
+            .map((i) => `${num(i.quantity)} × ${str(i.name)}`)
+            .join(', ')
+        : ''
+      return `${str(data.takenByName)} (${str(data.accountName)}) se llevó ${items}${data.reason ? ` — ${str(data.reason)}` : ''} · valor ${eurCents(num(data.totalCents))} · ${str(data.consumptionNumber)}`
     }
     case 'client.created':
       return `Dio de alta al cliente ${str(data.name)}${data.detail ? ` (${str(data.detail)})` : ''}`

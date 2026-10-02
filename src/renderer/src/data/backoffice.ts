@@ -82,6 +82,13 @@ export const navItems: NavItem[] = [
     permissions: ['client:read']
   },
   {
+    id: 'consumo',
+    label: 'Consumo interno',
+    icon: 'pi-home',
+    group: 'ventas',
+    permissions: ['internal_consumption:read', 'internal_account:manage']
+  },
+  {
     id: 'proveedores',
     label: 'Proveedores',
     icon: 'pi-truck',
@@ -159,6 +166,7 @@ export const sectionTitles: Record<string, [string, string]> = {
   actividad: ['VENTAS', 'Actividad de los TPV'],
   tickets: ['VENTAS', 'Histórico de tickets'],
   facturas: ['COMPRAS', 'Facturas de proveedores'],
+  consumo: ['VENTAS', 'Consumo interno (no es venta)'],
   proveedores: ['COMPRAS', 'Proveedores'],
   productos: ['CATÁLOGO', 'Productos'],
   categorias: ['CATÁLOGO', 'Categorías y subcategorías'],

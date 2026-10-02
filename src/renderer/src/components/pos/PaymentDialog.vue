@@ -20,6 +20,12 @@ const {
   settleClientId,
   settleEur,
   settleAmount,
+  internalAccountId,
+  internalTakenBy,
+  internalReason,
+  internalAccounts,
+  staffNames,
+  internalAllowed,
   dueTotal,
   total,
   ticket,
@@ -70,7 +76,8 @@ const methods = [
   { id: 'efectivo' as const, label: 'Efectivo', icon: 'pi-money-bill' },
   { id: 'tarjeta' as const, label: 'Tarjeta', icon: 'pi-credit-card' },
   { id: 'mixto' as const, label: 'Mixto', icon: 'pi-wallet' },
-  { id: 'fiado' as const, label: 'A cuenta', icon: 'pi-book' }
+  { id: 'fiado' as const, label: 'A cuenta', icon: 'pi-book' },
+  { id: 'interno' as const, label: 'Consumo interno', icon: 'pi-home' }
 ]
 // On a refund only direct cash/card give-back make sense (no mixed/credit).
 const visibleMethods = computed(() =>
@@ -83,7 +90,9 @@ const mixedCard = computed(() => Math.max(0, dueTotal.value - (mixedCashEur.valu
 // --- Collect a client's debt with this purchase ---
 const clients = useClientsStore()
 const settleOpen = ref(false)
-const canSettle = computed(() => !isRefund.value && payMethod.value !== 'fiado')
+const canSettle = computed(
+  () => !isRefund.value && payMethod.value !== 'fiado' && payMethod.value !== 'interno'
+)
 const settleBalance = computed(() => (clients.get(settleClientId.value)?.balanceCents ?? 0) / 100)
 // Picking a client proposes the whole debt.
 watch(settleClientId, (id) => {
@@ -119,7 +128,13 @@ const showSuccessChange = computed(() => payChange.value > 0)
       <div v-if="payDone" class="pay-done">
         <div class="pay-done__check"><i class="pi pi-check"></i></div>
         <div class="pay-done__title">
-          {{ isRefund ? 'Devolución realizada' : 'Cobro realizado' }}
+          {{
+            isRefund
+              ? 'Devolución realizada'
+              : payMethod === 'interno'
+                ? 'Consumo interno registrado'
+                : 'Cobro realizado'
+          }}
         </div>
         <div class="pay-done__label">{{ payResultLabel }}</div>
         <div v-if="lastTicketNumber" class="pay-done__ticket">
@@ -130,7 +145,11 @@ const showSuccessChange = computed(() => payChange.value > 0)
           <div class="pay-done__change-val pos-money">{{ eur(payChange) }}</div>
         </div>
         <div class="pay-done__actions">
-          <button class="pay-done__btn pay-done__btn--ghost" @click="showReceipt = true">
+          <button
+            v-if="lastSale"
+            class="pay-done__btn pay-done__btn--ghost"
+            @click="showReceipt = true"
+          >
             <i class="pi pi-receipt"></i> VER TICKET
           </button>
           <button class="pay-done__btn" @click="store.newTicket()">
@@ -144,7 +163,13 @@ const showSuccessChange = computed(() => payChange.value > 0)
         <div class="pay-head">
           <div>
             <div class="pay-head__label">
-              {{ isRefund ? 'TOTAL A DEVOLVER' : 'TOTAL A COBRAR' }}
+              {{
+                isRefund
+                  ? 'TOTAL A DEVOLVER'
+                  : payMethod === 'interno'
+                    ? 'VALOR (NO SE COBRA)'
+                    : 'TOTAL A COBRAR'
+              }}
             </div>
             <div class="pay-head__total pos-money">
               {{ isRefund ? eur(-total) : eur(dueTotal) }}
@@ -240,6 +265,56 @@ const showSuccessChange = computed(() => payChange.value > 0)
             <ClientPicker v-model="fiadoClient" allow-create />
           </div>
 
+          <!-- Internal consumption (not a sale) -->
+          <div v-else-if="payMethod === 'interno'" class="pay-int">
+            <div v-if="!internalAllowed" class="pay-int__warn">
+              <i class="pi pi-exclamation-triangle"></i> Solo productos del catálogo: quita las
+              líneas vendidas por precio para registrarlo como consumo interno.
+            </div>
+            <template v-else>
+              <div class="pay-int__lead">
+                No es una venta: no entra dinero. Se registra qué sale, para quién y quién se lo
+                lleva.
+              </div>
+              <label class="pay-int__label">Cuenta interna</label>
+              <div v-if="internalAccounts.length" class="pay-int__accounts">
+                <button
+                  v-for="a in internalAccounts"
+                  :key="a.id"
+                  class="pay-int__acc"
+                  :class="{ 'pay-int__acc--on': internalAccountId === a.id }"
+                  @click="internalAccountId = a.id"
+                >
+                  {{ a.name }}
+                </button>
+              </div>
+              <div v-else class="pay-int__warn">
+                No hay cuentas internas. El encargado las crea en Backoffice → Consumo interno.
+              </div>
+              <label class="pay-int__label" for="pay-int-who">Quién se lo lleva</label>
+              <InputText
+                id="pay-int-who"
+                v-model="internalTakenBy"
+                list="pay-int-staff"
+                autocomplete="off"
+                placeholder="Nombre de la persona (obligatorio)"
+                fluid
+              />
+              <datalist id="pay-int-staff">
+                <option v-for="n in staffNames" :key="n" :value="n" />
+              </datalist>
+              <label class="pay-int__label" for="pay-int-why"
+                >Motivo <small>(opcional)</small></label
+              >
+              <InputText
+                id="pay-int-why"
+                v-model="internalReason"
+                placeholder="p. ej. limpieza de baños"
+                fluid
+              />
+            </template>
+          </div>
+
           <!-- Collect a client's debt together with this purchase -->
           <div v-if="canSettle" class="pay-settle">
             <button class="pay-settle__toggle" @click="toggleSettle">
@@ -282,7 +357,9 @@ const showSuccessChange = computed(() => payChange.value > 0)
                   : 'COBRANDO…'
                 : isRefund
                   ? 'CONFIRMAR DEVOLUCIÓN'
-                  : 'CONFIRMAR COBRO'
+                  : payMethod === 'interno'
+                    ? 'REGISTRAR CONSUMO INTERNO'
+                    : 'CONFIRMAR COBRO'
             }}
           </button>
         </div>
@@ -313,6 +390,51 @@ const showSuccessChange = computed(() => payChange.value > 0)
 </template>
 
 <style scoped>
+.pay-int {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pay-int__lead {
+  font-size: 13px;
+  color: var(--pos-text-2);
+  font-weight: 600;
+}
+.pay-int__label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--pos-text-2);
+  margin-top: 6px;
+}
+.pay-int__label small {
+  font-weight: 600;
+  color: var(--pos-text-3);
+}
+.pay-int__accounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.pay-int__acc {
+  min-height: 50px;
+  border-radius: 12px;
+  border: 2px solid var(--pos-border-subtle);
+  background: #fff;
+  font-weight: 800;
+}
+.pay-int__acc--on {
+  border-color: var(--pos-green);
+  background: var(--pos-green-soft);
+  color: var(--pos-green-dark);
+}
+.pay-int__warn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--pos-warn-bg);
+  color: var(--pos-warn);
+  font-weight: 700;
+  font-size: 13px;
+}
 .pay-head__split {
   font-size: 13px;
   font-weight: 700;
@@ -559,11 +681,13 @@ const showSuccessChange = computed(() => payChange.value > 0)
 /* Methods */
 .pay-methods {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 16px 26px 0;
 }
 .pay-method {
-  flex: 1;
+  flex: 1 1 22%;
+  min-width: 110px;
   height: 52px;
   border-radius: 12px;
   font-weight: 800;

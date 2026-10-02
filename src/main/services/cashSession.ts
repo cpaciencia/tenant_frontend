@@ -29,6 +29,7 @@ import {
 } from '../repositories/cashMovements'
 import { insertMovementInTxn } from './cashMovements'
 import { listSessionPayments, summarizeSettlements } from './accountPayments'
+import { listSessionConsumptions } from './internalConsumption'
 import {
   insertOpenSession,
   getOpenSessions,
@@ -415,6 +416,7 @@ export function previewSessionArqueo(db: DB, sessionId: string): SessionArqueo {
     sellers: agg.sellers,
     movements,
     settlements,
+    internalConsumptions: listSessionConsumptions(db, sessionId),
     expectedCashCents:
       session.openingFloatCents +
       agg.tenders.cashCents +
@@ -505,7 +507,8 @@ export function closeCashSession(
       fiados: agg.fiados,
       sellers: agg.sellers,
       cashMovements: movements.list,
-      settlements: settlements.list
+      settlements: settlements.list,
+      internalConsumptions: listSessionConsumptions(db, req.sessionId)
     })
 
     const closed = getSessionById(db, req.sessionId)!

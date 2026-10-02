@@ -191,6 +191,16 @@ async function savePdf(): Promise<void> {
           </div>
         </div>
 
+        <div v-if="arqueo.internalConsumptions.length" class="cc-list">
+          <div class="cc-list-title">Consumo interno (no es venta ni dinero)</div>
+          <div v-for="c in arqueo.internalConsumptions" :key="c.id" class="cc-row">
+            <span
+              >{{ c.accountName }} · {{ c.takenByName }}
+              <small>{{ c.items.map((i) => `${i.quantity} × ${i.name}`).join(', ') }}</small></span
+            ><b class="pos-money">{{ eur(c.totalCents / 100) }}</b>
+          </div>
+        </div>
+
         <!-- Cash reconciliation -->
         <div class="cc-recon">
           <div class="cc-row">

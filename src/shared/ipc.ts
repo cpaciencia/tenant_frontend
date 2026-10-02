@@ -26,6 +26,9 @@ import type {
   RecordCashMovementRequest,
   MarkInvoiceUploadedRequest,
   AccountPayment,
+  InternalAccount,
+  InternalConsumption,
+  RecordConsumptionRequest,
   Client,
   ClientAccount,
   CreateClientRequest,
@@ -93,6 +96,9 @@ export const IpcChannels = {
   clientsAccount: 'clients:account',
   clientsRefresh: 'clients:refresh',
   clientsSettle: 'clients:settle',
+  internalAccounts: 'internal:accounts',
+  internalStaff: 'internal:staff',
+  internalRecord: 'internal:record',
   // Tickets set aside unpaid and resumed later.
   parkedList: 'parked:list',
   parkedPark: 'parked:park',
@@ -224,6 +230,14 @@ export interface IpcApi {
     refresh: () => Promise<Client[]>
     /** The client pays (part of) their debt, without a purchase. */
     settle: (request: SettleDebtRequest) => Promise<AccountPayment>
+  }
+  internal: {
+    /** Internal accounts to charge goods to ("Limpieza"…). */
+    accounts: () => Promise<InternalAccount[]>
+    /** Staff names (who can take goods). */
+    staff: () => Promise<string[]>
+    /** Record the open ticket as internal consumption (not a sale). */
+    record: (request: RecordConsumptionRequest) => Promise<InternalConsumption>
   }
   parked: {
     /** Tickets parked on this terminal, oldest first. */

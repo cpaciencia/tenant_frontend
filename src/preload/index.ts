@@ -69,6 +69,11 @@ const api: IpcApi = {
     complete: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsComplete, request),
     dismiss: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsDismiss, request)
   },
+  internal: {
+    accounts: () => ipcRenderer.invoke(IpcChannels.internalAccounts),
+    staff: () => ipcRenderer.invoke(IpcChannels.internalStaff),
+    record: (request) => ipcRenderer.invoke(IpcChannels.internalRecord, request)
+  },
   clients: {
     list: () => ipcRenderer.invoke(IpcChannels.clientsList),
     create: (request) => ipcRenderer.invoke(IpcChannels.clientsCreate, request),

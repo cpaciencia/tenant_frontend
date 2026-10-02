@@ -14,6 +14,7 @@ import UsuariosSection from '../components/backoffice/UsuariosSection.vue'
 import RolesSection from '../components/backoffice/RolesSection.vue'
 import StockSection from '../components/backoffice/StockSection.vue'
 import ClientesSection from '../components/backoffice/ClientesSection.vue'
+import ConsumoInternoSection from '../components/backoffice/ConsumoInternoSection.vue'
 import ConfiguracionSection from '../components/backoffice/ConfiguracionSection.vue'
 import PuestosSection from '../components/backoffice/PuestosSection.vue'
 import { useAuthStore } from '../stores/auth'
@@ -36,6 +37,7 @@ const sections = {
   roles: RolesSection,
   stock: StockSection,
   clientes: ClientesSection,
+  consumo: ConsumoInternoSection,
   puestos: PuestosSection,
   configuracion: ConfiguracionSection
 }

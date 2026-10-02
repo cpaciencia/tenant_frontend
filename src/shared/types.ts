@@ -274,6 +274,51 @@ export interface RecordCashMovementRequest {
   actor: Actor
 }
 
+/** Who internal consumption is charged to ("Limpieza", "Dirección"…). */
+export interface InternalAccount {
+  id: string
+  name: string
+}
+
+export interface InternalConsumptionItem {
+  productId: string
+  name: string
+  quantity: number
+  unitPriceCents: number
+}
+
+/**
+ * Goods taken for internal use and never paid (cleaning, the owner…). NOT a sale:
+ * own numbering `CI-T01-2026-00001`, no money, informative in the cierre; it
+ * takes stock. Who takes it is mandatory.
+ */
+export interface InternalConsumption {
+  id: string
+  consumptionNumber: string
+  terminalId: string
+  accountId: string
+  accountName: string
+  takenByName: string
+  reason: string | null
+  items: InternalConsumptionItem[]
+  /** Value at sale price. */
+  totalCents: number
+  cashSessionId: string
+  userId: string | null
+  userName: string
+  createdAt: string
+}
+
+export interface RecordConsumptionRequest {
+  items: InternalConsumptionItem[]
+  accountId: string
+  takenByName: string
+  reason?: string | null
+  cashSessionId: string
+  draftId?: string | null
+  actor: Actor
+}
+
 /** An "a cuenta" client and what they owe right now (all terminals). */
 export interface Client {
   id: string
@@ -429,6 +474,8 @@ export interface CashSession {
   cashMovements: CashMovement[]
   /** Debt payments taken in this caja (cobros de cuentas). */
   settlements: AccountPayment[]
+  /** Goods taken as internal consumption (informative). */
+  internalConsumptions: InternalConsumption[]
 }
 
 export interface OpenSessionRequest {
@@ -490,6 +537,8 @@ export interface SessionArqueo {
   movements: CashMovementsSummary
   /** Debt payments taken (cobros de cuentas): cash adds to the expected cash. */
   settlements: SettlementsSummary
+  /** Internal consumption (informative: no money, not sales). */
+  internalConsumptions: InternalConsumption[]
 }
 
 export interface Sale {

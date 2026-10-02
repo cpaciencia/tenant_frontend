@@ -523,5 +523,43 @@ export const migrations: Migration[] = [
     down: async ({ context: db }) => {
       db.exec('DROP TABLE IF EXISTS account_payments; DROP TABLE IF EXISTS clients;')
     }
+  },
+  {
+    name: '0019-internal-consumption',
+    up: async ({ context: db }) => {
+      // Internal consumption (cleaning, the owner…): goods taken and never paid.
+      // NOT a sale: its own numbering (CI-…), no money, informative in the cierre.
+      db.exec(`
+        CREATE TABLE internal_accounts (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          active     INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE internal_consumptions (
+          id                 TEXT PRIMARY KEY,
+          consumption_number TEXT NOT NULL UNIQUE,
+          terminal_id        TEXT NOT NULL,
+          consumption_year   INTEGER NOT NULL,
+          consumption_seq    INTEGER NOT NULL,
+          account_id         TEXT NOT NULL,
+          account_name       TEXT NOT NULL,
+          taken_by_name      TEXT NOT NULL,
+          reason             TEXT,
+          items_json         TEXT NOT NULL,
+          total_cents        INTEGER NOT NULL,
+          cash_session_id    TEXT NOT NULL,
+          user_id            TEXT,
+          user_name          TEXT NOT NULL,
+          created_at         TEXT NOT NULL,
+          UNIQUE (terminal_id, consumption_year, consumption_seq)
+        );
+        CREATE INDEX idx_internal_consumptions_session ON internal_consumptions (cash_session_id);
+        ALTER TABLE cash_sessions ADD COLUMN consumptions_json TEXT NOT NULL DEFAULT '[]';
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS internal_consumptions; DROP TABLE IF EXISTS internal_accounts;')
+    }
   }
 ]

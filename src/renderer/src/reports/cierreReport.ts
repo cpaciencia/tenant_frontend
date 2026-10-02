@@ -54,6 +54,19 @@ export interface CierreReportData {
         createdAt: string
       }[]
     | null
+  /** Internal consumption (informative: no money, not sales). */
+  internalConsumptions?:
+    | {
+        consumptionNumber: string
+        accountName: string
+        takenByName: string
+        reason: string | null
+        totalCents: number
+        userName: string | null
+        createdAt: string
+        items: { name: string; quantity: number; unitPriceCents: number }[]
+      }[]
+    | null
   expectedCashCents: number | null
   countedCashCents: number | null
   differenceCents: number | null
@@ -145,6 +158,17 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
         )
         .join('') +
       `<tr class="total"><td>Total cobrado de cuentas</td><td class="num">${eur(settlements.reduce((n, p) => n + p.totalCents, 0))}</td></tr>`
+    : ''
+  const consumptions = s.internalConsumptions ?? []
+  const consumptionRows = consumptions.length
+    ? consumptions
+        .map(
+          (c) =>
+            `<tr><td><b>${esc(c.accountName)}</b> · se lo lleva ${esc(c.takenByName)}${c.reason ? ` <span class="muted">(${esc(c.reason)})</span>` : ''}<br><span class="muted">${esc(c.items.map((i) => `${i.quantity} × ${i.name}`).join(', '))}</span><br><span class="muted">${esc(c.consumptionNumber)} · ${esc(dateTime(c.createdAt))}${c.userName ? ` · marcado por ${esc(c.userName)}` : ''}</span></td>` +
+            `<td class="num">${eur(c.totalCents)}</td></tr>`
+        )
+        .join('') +
+      `<tr class="total"><td>Total a precio de venta</td><td class="num">${eur(consumptions.reduce((n, c) => n + c.totalCents, 0))}</td></tr>`
     : ''
   const movementArqueoRows = [
     settledCash ? row('+ Cobros de cuentas (efectivo)', eur(settledCash)) : '',
@@ -313,6 +337,8 @@ export function buildCierreReportHtml(s: CierreReportData, business: ReportBusin
 
       <h2>Ventas a cuenta</h2>
       <table>${fiadoRows}</table>
+
+      ${consumptionRows ? `<h2>Consumo interno <span class="muted">(no es venta ni dinero)</span></h2><table>${consumptionRows}</table>` : ''}
 
       ${settlementRows ? `<h2>Cobros de cuentas <span class="muted">(no son ventas)</span></h2><table>${settlementRows}</table>` : ''}
     </div>

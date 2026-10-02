@@ -56,6 +56,12 @@ import {
   otherTerminalsBalance
 } from '../repositories/clients'
 import { settleDebt } from '../services/accountPayments'
+import {
+  listInternalAccounts,
+  listStaffNames,
+  recordInternalConsumption
+} from '../services/internalConsumption'
+import { pullInternalAccounts } from '../sync/internalAccountPull'
 import { pullClients } from '../sync/clientPull'
 import { pullSuppliers } from '../sync/supplierPull'
 import { AuthService } from '../services/auth'
@@ -468,6 +474,48 @@ export function registerDbHandlers(
 
   ipcMain.handle(IpcChannels.cashMovementsSuppliers, () => listSuppliers(db))
 
+  ipcMain.handle(IpcChannels.internalAccounts, () => listInternalAccounts(db))
+
+  ipcMain.handle(IpcChannels.internalStaff, () => listStaffNames(db))
+
+  ipcMain.handle(IpcChannels.internalRecord, (_event, request: unknown) => {
+    const r = (request ?? {}) as Record<string, unknown>
+    if (!Array.isArray(r.items) || r.items.length === 0 || r.items.length > 200) {
+      throw new Error('Invalid items')
+    }
+    const items = (r.items as Record<string, unknown>[]).map((i) => {
+      if (
+        typeof i?.productId !== 'string' ||
+        typeof i.name !== 'string' ||
+        !Number.isInteger(i.quantity) ||
+        (i.quantity as number) <= 0 ||
+        !Number.isInteger(i.unitPriceCents)
+      ) {
+        throw new Error('Invalid item')
+      }
+      return {
+        productId: i.productId,
+        name: i.name,
+        quantity: i.quantity as number,
+        unitPriceCents: i.unitPriceCents as number
+      }
+    })
+    const str = (v: unknown, max: number): string | null =>
+      v == null ? null : typeof v === 'string' && v.length <= max ? v : null
+    if (typeof r.accountId !== 'string' || typeof r.cashSessionId !== 'string') {
+      throw new Error('Invalid internal consumption')
+    }
+    return recordInternalConsumption(db, getSettings(db).terminalId, {
+      items,
+      accountId: r.accountId,
+      takenByName: str(r.takenByName, 120) ?? '',
+      reason: str(r.reason, 300),
+      cashSessionId: r.cashSessionId,
+      draftId: str(r.draftId, 64),
+      actor: parseActor(r.actor)
+    })
+  })
+
   ipcMain.handle(IpcChannels.clientsList, () => listClients(db))
 
   ipcMain.handle(IpcChannels.clientsCreate, (_event, request: unknown) => {
@@ -631,7 +679,8 @@ export function registerDbHandlers(
       pullProducts(db, baseUrl, undefined, { full: true }),
       pullUsers(db, baseUrl, undefined, { full: true }),
       pullSuppliers(db, baseUrl),
-      pullClients(db, baseUrl)
+      pullClients(db, baseUrl),
+      pullInternalAccounts(db, baseUrl)
     ])
     const countAt = (i: number): number | null =>
       settled[i].status === 'fulfilled'
