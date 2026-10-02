@@ -185,7 +185,7 @@ function logout(): void {
   router.push({ name: 'login' })
 }
 function goBackoffice(): void {
-  router.push({ name: 'backoffice', params: { section: 'ventas' } })
+  router.push({ name: 'backoffice', params: { section: 'resumen' } })
 }
 </script>
 

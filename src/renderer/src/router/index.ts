@@ -32,7 +32,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/BackofficeView.vue'),
     meta: { requiresAuth: true }
   },
-  { path: '/backoffice', redirect: '/backoffice/ventas' }
+  { path: '/backoffice', redirect: '/backoffice/resumen' }
 ]
 
 export const router = createRouter({

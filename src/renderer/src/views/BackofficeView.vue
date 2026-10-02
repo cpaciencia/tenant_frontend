@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navGroups, navItems, sectionTitles, type NavGroupId } from '../data/backoffice'
 import VentasSection from '../components/backoffice/VentasSection.vue'
+import ResumenSection from '../components/backoffice/ResumenSection.vue'
 import ActividadSection from '../components/backoffice/ActividadSection.vue'
 import TicketsSection from '../components/backoffice/TicketsSection.vue'
 import FacturasSection from '../components/backoffice/FacturasSection.vue'
@@ -25,6 +26,7 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const sections = {
+  resumen: ResumenSection,
   ventas: VentasSection,
   actividad: ActividadSection,
   tickets: TicketsSection,

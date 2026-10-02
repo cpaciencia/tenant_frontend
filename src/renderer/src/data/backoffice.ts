@@ -54,6 +54,13 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   {
+    id: 'resumen',
+    label: 'Resumen',
+    icon: 'pi-chart-bar',
+    group: 'ventas',
+    permissions: ['sale:read']
+  },
+  {
     id: 'ventas',
     label: 'Cajas y cierres',
     icon: 'pi-calculator',
@@ -162,6 +169,7 @@ export const navItems: NavItem[] = [
 
 /** Breadcrumb + title per section. */
 export const sectionTitles: Record<string, [string, string]> = {
+  resumen: ['VENTAS', 'Resumen'],
   ventas: ['VENTAS', 'Cajas y cierres'],
   actividad: ['VENTAS', 'Actividad de los TPV'],
   tickets: ['VENTAS', 'Histórico de tickets'],
