@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   listProducts,
   createProduct,
@@ -12,11 +13,16 @@ import {
 import { useCan } from '../../composables/useCan'
 import { fuzzySearch } from '../../utils/search'
 
+import MoneyInput from '../common/MoneyInput.vue'
 /**
  * Product catalog CRUD. Every product belongs to a category (mandatory). Backend-
  * owned, reached over HTTP (shared by web and desktop). Read needs `product:read`;
  * writes the matching perms. Prices are edited in euros and stored as integer
  * cents; the tax rate is edited as a percentage and stored as a fraction.
+ *
+ * The unit purchase price ("precio de compra") is backoffice-only. 0 means it was
+ * never entered (the legacy system had none): those products are flagged
+ * "Falta" and can be listed on their own to fill them in.
  */
 const { can } = useCan()
 
@@ -25,6 +31,8 @@ const categories = ref<AdminCategory[]>([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
+/** Show only the products whose purchase price is still missing. */
+const onlyMissingCost = ref(false)
 
 const dialogOpen = ref(false)
 const saving = ref(false)
@@ -34,6 +42,7 @@ const form = reactive({
   barcode: '',
   name: '',
   priceEur: 0,
+  costEur: 0,
   taxPct: 21,
   categoryId: null as string | null,
   active: true
@@ -55,8 +64,22 @@ const categoryLabel = computed(() => {
   return (id: string | null): string => (id ? (map.get(id) ?? '—') : '—')
 })
 
-const filtered = computed<AdminProduct[]>(() =>
-  fuzzySearch(products.value, search.value, (p) => [p.name, p.barcode])
+const missingCostCount = computed(() => products.value.filter((p) => p.costCents === 0).length)
+
+const filtered = computed<AdminProduct[]>(() => {
+  const base = onlyMissingCost.value
+    ? products.value.filter((p) => p.costCents === 0)
+    : products.value
+  return fuzzySearch(base, search.value, (p) => [p.name, p.barcode])
+})
+
+/** Gross margin over the sale price, once both prices are known. */
+function marginPct(priceCents: number, costCents: number): number | null {
+  if (costCents <= 0 || priceCents <= 0) return null
+  return Math.round(((priceCents - costCents) / priceCents) * 100)
+}
+const formMargin = computed(() =>
+  marginPct(Math.round(form.priceEur * 100), Math.round((form.costEur || 0) * 100))
 )
 
 function eur(cents: number): string {
@@ -83,6 +106,7 @@ function openCreate(): void {
   form.barcode = ''
   form.name = ''
   form.priceEur = 0
+  form.costEur = 0
   form.taxPct = 21
   form.categoryId = null
   form.active = true
@@ -95,6 +119,7 @@ function openEdit(product: AdminProduct): void {
   form.barcode = product.barcode ?? ''
   form.name = product.name
   form.priceEur = product.priceCents / 100
+  form.costEur = product.costCents / 100
   form.taxPct = Math.round(product.taxRate * 100)
   form.categoryId = product.categoryId
   form.active = product.active
@@ -117,6 +142,7 @@ async function submit(): Promise<void> {
     barcode: form.barcode.trim() || null,
     name: form.name.trim(),
     priceCents: Math.round(form.priceEur * 100),
+    costCents: Math.max(0, Math.round((form.costEur || 0) * 100)),
     taxRate: form.taxPct / 100,
     categoryId: form.categoryId,
     active: form.active
@@ -143,7 +169,20 @@ async function remove(product: AdminProduct): Promise<void> {
   }
 }
 
-onMounted(load)
+const route = useRoute()
+const router = useRouter()
+
+onMounted(async () => {
+  await load()
+  // Deep-link from the POS grid (right-click a tile): open that product's editor.
+  const editId = route.query.edit
+  if (typeof editId === 'string' && editId) {
+    const target = products.value.find((p) => p.id === editId)
+    if (target) openEdit(target)
+    // Drop the query so a later revisit/refresh doesn't reopen the dialog.
+    router.replace({ name: 'backoffice', params: { section: 'productos' }, query: {} })
+  }
+})
 </script>
 
 <template>
@@ -157,6 +196,10 @@ onMounted(load)
         @click="openCreate"
       />
       <span class="bo-spacer" />
+      <label class="bo-missing-filter" :class="{ 'bo-missing-filter--on': onlyMissingCost }">
+        <ToggleSwitch v-model="onlyMissingCost" />
+        Solo sin precio de compra ({{ missingCostCount }})
+      </label>
       <InputText v-model="search" placeholder="Buscar por nombre o código…" class="bo-search" />
       <span v-if="error" class="bo-error">{{ error }}</span>
     </div>
@@ -186,6 +229,26 @@ onMounted(load)
       <Column header="Precio" style="width: 8rem">
         <template #body="{ data }">
           <span class="pos-money">{{ eur(data.priceCents) }}</span>
+        </template>
+      </Column>
+      <Column header="P. compra" field="costCents" sortable style="width: 9rem">
+        <template #body="{ data }">
+          <Tag
+            v-if="data.costCents === 0"
+            value="Falta"
+            severity="warn"
+            icon="pi pi-exclamation-triangle"
+            title="Precio de compra sin introducir"
+          />
+          <span v-else class="pos-money">{{ eur(data.costCents) }}</span>
+        </template>
+      </Column>
+      <Column header="Margen" style="width: 6rem">
+        <template #body="{ data }">
+          <span v-if="marginPct(data.priceCents, data.costCents) !== null"
+            >{{ marginPct(data.priceCents, data.costCents) }}%</span
+          >
+          <span v-else class="bo-muted">—</span>
         </template>
       </Column>
       <Column header="IVA" style="width: 6rem">
@@ -247,19 +310,35 @@ onMounted(load)
         <div class="bo-grid2">
           <div>
             <label>Precio (€)</label>
-            <InputNumber
-              v-model="form.priceEur"
-              :min-fraction-digits="2"
-              :max-fraction-digits="2"
-              mode="decimal"
-              fluid
-            />
+            <MoneyInput v-model="form.priceEur" allow-negative fluid />
           </div>
           <div>
             <label>IVA (%)</label>
             <InputNumber v-model="form.taxPct" :min="0" :max="100" suffix=" %" fluid />
           </div>
         </div>
+
+        <div class="bo-grid2">
+          <div>
+            <label>Precio de compra unitario (€)</label>
+            <MoneyInput
+              v-model="form.costEur"
+              :min="0"
+              :max-fraction-digits="4"
+              fluid
+              :invalid="!form.costEur"
+            />
+          </div>
+          <div>
+            <label>Margen</label>
+            <div class="bo-margin">
+              {{ formMargin !== null ? `${formMargin}%` : '—' }}
+            </div>
+          </div>
+        </div>
+        <small v-if="!form.costEur" class="bo-warn-note">
+          <i class="pi pi-exclamation-triangle"></i> Falta el precio de compra (se guarda como 0).
+        </small>
 
         <label>Código de barras (opcional)</label>
         <InputText v-model="form.barcode" placeholder="8412345000017" />
@@ -280,6 +359,32 @@ onMounted(load)
 </template>
 
 <style scoped>
+.bo-missing-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pos-text-2);
+  cursor: pointer;
+}
+.bo-missing-filter--on {
+  color: var(--pos-warn);
+}
+.bo-muted {
+  color: var(--pos-text-3);
+}
+.bo-margin {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  color: var(--pos-green-dark);
+}
+.bo-warn-note {
+  color: var(--pos-warn);
+  font-weight: 700;
+}
 .bo-toolbar {
   display: flex;
   align-items: center;

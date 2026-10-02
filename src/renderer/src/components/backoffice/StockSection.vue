@@ -88,7 +88,14 @@ onMounted(load)
       <span v-if="error" class="bo-error">{{ error }}</span>
     </div>
 
-    <DataTable :value="filtered" :loading="loading" data-key="id" paginator :rows="15" class="bo-card">
+    <DataTable
+      :value="filtered"
+      :loading="loading"
+      data-key="id"
+      paginator
+      :rows="15"
+      class="bo-card"
+    >
       <template #empty><div class="st-empty">No hay productos.</div></template>
       <Column field="name" header="Producto" sortable />
       <Column header="Categoría">

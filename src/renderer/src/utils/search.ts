@@ -8,11 +8,7 @@
 
 /** Lowercase and strip diacritics so "Agüa" and "agua" compare equal. */
 export function normalizeText(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim()
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
 function trigrams(s: string): Set<string> {

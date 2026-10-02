@@ -41,8 +41,21 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { id: 'ventas', label: 'Ventas · Cierre Z', icon: 'pi-chart-line', permissions: ['sale:read'] },
+  { id: 'ventas', label: 'Cajas y cierres', icon: 'pi-calculator', permissions: ['sale:read'] },
+  { id: 'actividad', label: 'Actividad', icon: 'pi-history', permissions: ['activity:read'] },
   { id: 'tickets', label: 'Tickets', icon: 'pi-receipt', permissions: ['sale:read'] },
+  {
+    id: 'proveedores',
+    label: 'Proveedores',
+    icon: 'pi-truck',
+    permissions: ['supplier:manage', 'invoice:read']
+  },
+  {
+    id: 'facturas',
+    label: 'Facturas proveedores',
+    icon: 'pi-file',
+    permissions: ['invoice:read']
+  },
   { id: 'productos', label: 'Productos', icon: 'pi-box', permissions: ['product:read'] },
   {
     id: 'categorias',
@@ -52,7 +65,7 @@ export const navItems: NavItem[] = [
   },
   {
     id: 'cajas',
-    label: 'Cajas por categoría',
+    label: 'Grupos contables',
     icon: 'pi-wallet',
     permissions: ['accounting_group:read']
   },
@@ -70,11 +83,14 @@ export const navItems: NavItem[] = [
 
 /** Breadcrumb + title per section. */
 export const sectionTitles: Record<string, [string, string]> = {
-  ventas: ['INFORMES', 'Ventas y cierre de caja'],
+  ventas: ['INFORMES', 'Cajas y cierres'],
+  actividad: ['INFORMES', 'Actividad de los TPV'],
   tickets: ['INFORMES', 'Histórico de tickets'],
+  facturas: ['INFORMES', 'Facturas de proveedores'],
+  proveedores: ['COMPRAS', 'Proveedores'],
   productos: ['CATÁLOGO', 'Productos'],
   categorias: ['CATÁLOGO', 'Categorías y subcategorías'],
-  cajas: ['CATÁLOGO', 'Cajas por categoría'],
+  cajas: ['CATÁLOGO', 'Grupos contables'],
   usuarios: ['EQUIPO', 'Usuarios y empleados'],
   roles: ['EQUIPO', 'Roles y permisos'],
   stock: ['ALMACÉN', 'Control de stock'],
@@ -108,7 +124,7 @@ export const kpis: Kpi[] = [
     color: '#FF9800'
   },
   {
-    label: 'Fiado pendiente',
+    label: 'A cuenta pendiente',
     value: '86,90 €',
     sub: '3 clientes con deuda',
     icon: 'pi-history',
@@ -141,7 +157,7 @@ export const recentTickets: RecentTicket[] = [
   {
     no: '#0084',
     hora: '13:28',
-    method: 'Fiado',
+    method: 'A cuenta',
     items: 7,
     amount: '24,90 €',
     icon: 'pi-book',
@@ -183,5 +199,5 @@ export const recentTickets: RecentTicket[] = [
 export const payBreakdown: PayBreakdownRow[] = [
   { label: 'Efectivo', amount: '742,30 €', pct: '60%', icon: 'pi-money-bill', color: '#27ae60' },
   { label: 'Tarjeta', amount: '418,60 €', pct: '33%', icon: 'pi-credit-card', color: '#2196F3' },
-  { label: 'Fiado', amount: '86,90 €', pct: '7%', icon: 'pi-book', color: '#ec407a' }
+  { label: 'A cuenta', amount: '86,90 €', pct: '7%', icon: 'pi-book', color: '#ec407a' }
 ]

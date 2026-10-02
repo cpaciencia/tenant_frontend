@@ -71,3 +71,30 @@ export function countPending(db: DB): number {
   }
   return row.n
 }
+
+/** Queue counts in one shot: pending (synced = 0) and total (everything ever enqueued). */
+export function countTotals(db: DB): { pending: number; total: number } {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN synced = 0 THEN 1 ELSE 0 END), 0) AS pending
+         FROM sync_queue`
+    )
+    .get() as { total: number; pending: number }
+  return { total: row.total, pending: row.pending }
+}
+
+/**
+ * Marks every queued row as un-synced again (and resets attempts/error) so the
+ * worker re-pushes the full local history. Rows keep their original payload and
+ * envelope id; backend ingestion is idempotent. Returns how many rows were reset.
+ *
+ * Intended for recovery after the backend database was wiped — the cloud no longer
+ * has these sales, but the local mirror still does.
+ */
+export function requeueAll(db: DB): number {
+  const result = db
+    .prepare('UPDATE sync_queue SET synced = 0, attempts = 0, last_error = NULL')
+    .run()
+  return result.changes
+}

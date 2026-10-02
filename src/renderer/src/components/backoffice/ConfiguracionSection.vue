@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import type { AppSettings } from '../../../../shared/types'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/types'
+import { sanitizeShifts, type ShiftDefinition } from '../../../../shared/shifts'
 import { useTerminalStore } from '../../stores/terminal'
 import { configureHttp } from '../../services/http'
 import { useAuthStore } from '../../stores/auth'
+import { useCatalogStore } from '../../stores/catalog'
 import { useCan } from '../../composables/useCan'
 // TEMPORARY migration tool, embedded here (hidden from the menu). Remove for production.
 import ImportSection from './ImportSection.vue'
 
+import MoneyInput from '../common/MoneyInput.vue'
 const { can } = useCan()
 
 // Once enrolled, the terminal id is owned by the backend registration and must
@@ -31,7 +34,26 @@ const form = reactive<EditableSettings>({
   businessName: '',
   businessAddress: '',
   businessTaxId: '',
-  businessPhone: ''
+  businessPhone: '',
+  cashFloatCents: 15000,
+  shifts: DEFAULT_SETTINGS.shifts.map((s) => ({ ...s }))
+})
+
+// Shifts (turnos): a caja belongs to one. Edited as a small list; the end may be
+// earlier than the start (it then wraps past midnight, e.g. 16:00–00:00).
+function addShift(): void {
+  form.shifts.push({ id: `shift-${Date.now()}`, name: '', start: '08:00', end: '16:00' })
+}
+function removeShift(index: number): void {
+  form.shifts.splice(index, 1)
+}
+
+/** Edit the float in euros; stored as integer cents. */
+const cashFloatEur = computed<number>({
+  get: () => form.cashFloatCents / 100,
+  set: (v) => {
+    form.cashFloatCents = Math.max(0, Math.round((v || 0) * 100))
+  }
 })
 
 const loading = ref(true)
@@ -49,6 +71,70 @@ const urlError = ref('')
 const testing = ref(false)
 const testMsg = ref('')
 
+// Outbound sync queue (sales + Z-closures). The "force re-sync" button re-pushes
+// the full local history — recovery path for when the backend DB was wiped/reset.
+const syncStatus = ref<{ pending: number; total: number } | null>(null)
+const resyncing = ref(false)
+const syncMsg = ref('')
+const syncError = ref('')
+
+async function refreshSyncStatus(): Promise<void> {
+  try {
+    syncStatus.value = await window.api.sync.status()
+  } catch {
+    syncStatus.value = null
+  }
+}
+
+async function forceResync(): Promise<void> {
+  if (resyncing.value) return
+  resyncing.value = true
+  syncMsg.value = ''
+  syncError.value = ''
+  try {
+    const r = await window.api.sync.resyncAll()
+    syncMsg.value =
+      r.pending === 0
+        ? `Re-enviadas ${r.requeued} operaciones. Todo sincronizado.`
+        : `Re-encoladas ${r.requeued}; quedan ${r.pending} pendientes (se reintentarán en segundo plano).`
+    await refreshSyncStatus()
+  } catch (e) {
+    syncError.value = e instanceof Error ? e.message : 'No se pudo re-sincronizar.'
+  } finally {
+    resyncing.value = false
+  }
+}
+
+// Clean re-pull of the catalog mirror (fixes POS-grid duplicates after a backend reset).
+const refreshingCatalog = ref(false)
+const catalogMsg = ref('')
+const catalogError = ref('')
+
+async function refreshCatalog(): Promise<void> {
+  if (refreshingCatalog.value) return
+  refreshingCatalog.value = true
+  catalogMsg.value = ''
+  catalogError.value = ''
+  try {
+    const r = await window.api.catalog.refresh()
+    const n = (v: number | null): string => (v === null ? 'error' : String(v))
+    if (r.categories === null && r.products === null && r.accountingGroups === null) {
+      catalogError.value = 'No se pudo refrescar (¿el servidor está accesible?).'
+    } else {
+      // Reload the POS catalog store from the now-clean mirror so the grid updates
+      // live (it caches after the first load and wouldn't otherwise refresh).
+      await useCatalogStore().load()
+      catalogMsg.value =
+        `Catálogo refrescado: ${n(r.categories)} categorías · ${n(r.products)} productos · ` +
+        `${n(r.accountingGroups)} grupos contables. Ya puedes volver a la caja.`
+    }
+  } catch (e) {
+    catalogError.value = e instanceof Error ? e.message : 'No se pudo refrescar el catálogo.'
+  } finally {
+    refreshingCatalog.value = false
+  }
+}
+
 function apply(settings: AppSettings): void {
   form.terminalId = settings.terminalId
   form.customerDisplayEnabled = settings.customerDisplayEnabled
@@ -58,12 +144,15 @@ function apply(settings: AppSettings): void {
   form.businessAddress = settings.businessAddress
   form.businessTaxId = settings.businessTaxId
   form.businessPhone = settings.businessPhone
+  form.cashFloatCents = settings.cashFloatCents
+  form.shifts = settings.shifts.map((s: ShiftDefinition) => ({ ...s }))
 }
 
 onMounted(async () => {
   try {
     apply(await window.api.settings.get())
     serverUrl.value = (await window.api.enrollment.getState()).syncApiUrl
+    await refreshSyncStatus()
   } catch (e) {
     error.value = 'No se pudo cargar la configuración.'
     console.error(e)
@@ -78,7 +167,8 @@ async function testServer(): Promise<void> {
   testMsg.value = ''
   try {
     const r = await window.api.enrollment.testConnection(serverUrl.value.trim())
-    testMsg.value = (r.ok ? '✓ ' : '✗ ') + (r.message ?? (r.ok ? 'Conexión correcta' : 'Sin conexión'))
+    testMsg.value =
+      (r.ok ? '✓ ' : '✗ ') + (r.message ?? (r.ok ? 'Conexión correcta' : 'Sin conexión'))
   } catch {
     testMsg.value = '✗ No se pudo probar la conexión'
   } finally {
@@ -106,13 +196,20 @@ async function saveServerUrl(): Promise<void> {
 
 async function save(): Promise<void> {
   if (saving.value) return
-  saving.value = true
   error.value = ''
+  if (!sanitizeShifts(form.shifts)) {
+    error.value = 'Revisa los turnos: cada uno necesita nombre y horas distintas de inicio y fin.'
+    return
+  }
+  saving.value = true
   try {
-    apply(await window.api.settings.update({ ...form }))
+    // IPC can only carry plain data: Vue's reactive proxies (the shifts list and
+    // its rows) fail to clone, so send a plain copy.
+    const patch: EditableSettings = { ...form, shifts: form.shifts.map((sh) => ({ ...sh })) }
+    apply(await window.api.settings.update(patch))
     savedAt.value = Date.now()
   } catch (e) {
-    error.value = 'No se pudo guardar. Revisa el número de puesto.'
+    error.value = `No se pudo guardar la configuración: ${e instanceof Error ? e.message : String(e)}`
     console.error(e)
   } finally {
     saving.value = false
@@ -134,11 +231,19 @@ async function save(): Promise<void> {
       </div>
       <div class="cfg__row">
         <label class="cfg__label" for="cfg-bizname">Nombre</label>
-        <InputText id="cfg-bizname" v-model="form.businessName" placeholder="Camping Parque Tropical" />
+        <InputText
+          id="cfg-bizname"
+          v-model="form.businessName"
+          placeholder="Camping Parque Tropical"
+        />
       </div>
       <div class="cfg__row">
         <label class="cfg__label" for="cfg-bizaddr">Dirección</label>
-        <InputText id="cfg-bizaddr" v-model="form.businessAddress" placeholder="Calle, nº · CP Localidad" />
+        <InputText
+          id="cfg-bizaddr"
+          v-model="form.businessAddress"
+          placeholder="Calle, nº · CP Localidad"
+        />
       </div>
       <div class="cfg__grid2">
         <div class="cfg__row">
@@ -158,7 +263,9 @@ async function save(): Promise<void> {
         <i class="pi pi-desktop"></i>
         <div>
           <div class="cfg__card-title">Puesto</div>
-          <div class="cfg__card-sub">Identificador de esta caja. Prefija cada número de ticket.</div>
+          <div class="cfg__card-sub">
+            Identificador de esta caja. Prefija cada número de ticket.
+          </div>
         </div>
       </div>
       <div class="cfg__row">
@@ -175,6 +282,52 @@ async function save(): Promise<void> {
         </span>
         <span v-else class="cfg__hint"
           >Ej. los tickets saldrán como {{ form.terminalId || 'T01' }}-2026-00001</span
+        >
+      </div>
+    </div>
+
+    <!-- Caja: fondo de cambio -->
+    <div class="bo-card cfg__card">
+      <div class="cfg__card-head">
+        <i class="pi pi-wallet"></i>
+        <div>
+          <div class="cfg__card-title">Caja</div>
+          <div class="cfg__card-sub">
+            Cada caja es de un turno. Al cerrar una caja se abre al momento la del turno siguiente
+            con el fondo que se deja en el cajón.
+          </div>
+        </div>
+      </div>
+      <div class="cfg__row">
+        <label class="cfg__label" for="cfg-float">Fondo de caja por defecto</label>
+        <MoneyInput id="cfg-float" v-model="cashFloatEur" :min="0" class="cfg__terminal" />
+      </div>
+      <div class="cfg__row">
+        <label class="cfg__label">Turnos</label>
+        <div v-for="(shift, i) in form.shifts" :key="shift.id" class="cfg__shift">
+          <InputText
+            v-model="shift.name"
+            placeholder="Nombre (p. ej. Mañana)"
+            class="cfg__shift-name"
+          />
+          <input v-model="shift.start" type="time" class="cfg__shift-time" aria-label="Inicio" />
+          <span>–</span>
+          <input v-model="shift.end" type="time" class="cfg__shift-time" aria-label="Fin" />
+          <Button
+            icon="pi pi-trash"
+            text
+            severity="danger"
+            :disabled="form.shifts.length <= 1"
+            aria-label="Quitar turno"
+            @click="removeShift(i)"
+          />
+        </div>
+        <div>
+          <Button label="Añadir turno" icon="pi pi-plus" text size="small" @click="addShift" />
+        </div>
+        <span class="cfg__hint"
+          >Si el fin es anterior al inicio, el turno acaba al día siguiente (p. ej.
+          16:00–00:00).</span
         >
       </div>
     </div>
@@ -198,7 +351,7 @@ async function save(): Promise<void> {
             id="cfg-server"
             v-model="serverUrl"
             class="cfg__server-input"
-            placeholder="http://localhost:8080"
+            placeholder="http://localhost:7071"
           />
           <Button
             label="Probar"
@@ -210,8 +363,12 @@ async function save(): Promise<void> {
           />
         </div>
         <span v-if="testMsg" class="cfg__hint">{{ testMsg }}</span>
-        <span v-if="urlError" class="cfg__error"><i class="pi pi-exclamation-triangle"></i> {{ urlError }}</span>
-        <span v-else-if="urlSavedAt" class="cfg__saved"><i class="pi pi-check-circle"></i> URL actualizada</span>
+        <span v-if="urlError" class="cfg__error"
+          ><i class="pi pi-exclamation-triangle"></i> {{ urlError }}</span
+        >
+        <span v-else-if="urlSavedAt" class="cfg__saved"
+          ><i class="pi pi-check-circle"></i> URL actualizada</span
+        >
         <div class="cfg__server-actions">
           <Button
             label="Guardar URL"
@@ -220,6 +377,68 @@ async function save(): Promise<void> {
             @click="saveServerUrl"
           />
         </div>
+      </div>
+    </div>
+
+    <!-- Sincronización -->
+    <div class="bo-card cfg__card">
+      <div class="cfg__card-head">
+        <i class="pi pi-sync"></i>
+        <div>
+          <div class="cfg__card-title">Sincronización</div>
+          <div class="cfg__card-sub">
+            Reenvía al servidor las ventas y cierres guardados en este puesto. Útil si la base de
+            datos del servidor se vació o reinició. El catálogo (productos, categorías, cajas) no se
+            sube por aquí: se recupera re-importando.
+          </div>
+        </div>
+      </div>
+      <div class="cfg__sync-status">
+        <span v-if="syncStatus">
+          <strong>{{ syncStatus.total }}</strong> operaciones locales ·
+          <strong :class="{ 'cfg__sync-pending': syncStatus.pending > 0 }">{{
+            syncStatus.pending
+          }}</strong>
+          pendientes
+        </span>
+        <span v-else class="cfg__hint">Estado de la cola no disponible.</span>
+      </div>
+      <span v-if="syncError" class="cfg__error"
+        ><i class="pi pi-exclamation-triangle"></i> {{ syncError }}</span
+      >
+      <span v-else-if="syncMsg" class="cfg__saved"
+        ><i class="pi pi-check-circle"></i> {{ syncMsg }}</span
+      >
+      <div class="cfg__server-actions">
+        <Button
+          label="Forzar re-sincronización"
+          icon="pi pi-sync"
+          severity="warning"
+          :loading="resyncing"
+          @click="forceResync"
+        />
+      </div>
+
+      <div class="cfg__sync-sep"></div>
+      <div class="cfg__card-sub">
+        Si la rejilla de la caja muestra categorías o productos duplicados (tras un reinicio del
+        servidor), baja de nuevo el catálogo y limpia las copias obsoletas del puesto.
+      </div>
+      <span v-if="catalogError" class="cfg__error"
+        ><i class="pi pi-exclamation-triangle"></i> {{ catalogError }}</span
+      >
+      <span v-else-if="catalogMsg" class="cfg__saved"
+        ><i class="pi pi-check-circle"></i> {{ catalogMsg }}</span
+      >
+      <div class="cfg__server-actions">
+        <Button
+          label="Refrescar catálogo (limpiar duplicados)"
+          icon="pi pi-download"
+          severity="secondary"
+          outlined
+          :loading="refreshingCatalog"
+          @click="refreshCatalog"
+        />
       </div>
     </div>
 
@@ -274,14 +493,13 @@ async function save(): Promise<void> {
 
     <!-- Actions -->
     <div class="cfg__actions">
-      <span v-if="error" class="cfg__error"><i class="pi pi-exclamation-triangle"></i> {{ error }}</span>
-      <span v-else-if="savedAt" class="cfg__saved"><i class="pi pi-check-circle"></i> Cambios guardados</span>
-      <Button
-        label="Guardar cambios"
-        icon="pi pi-save"
-        :loading="saving"
-        @click="save"
-      />
+      <span v-if="error" class="cfg__error"
+        ><i class="pi pi-exclamation-triangle"></i> {{ error }}</span
+      >
+      <span v-else-if="savedAt" class="cfg__saved"
+        ><i class="pi pi-check-circle"></i> Cambios guardados</span
+      >
+      <Button label="Guardar cambios" icon="pi pi-save" :loading="saving" @click="save" />
     </div>
 
     <!-- Migración de datos (TEMPORAL) — herramienta de desarrollo, se retirará en producción. -->
@@ -383,6 +601,20 @@ async function save(): Promise<void> {
 .cfg__server-actions {
   margin-top: 12px;
 }
+.cfg__sync-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pos-text-2);
+  margin-bottom: 8px;
+}
+.cfg__sync-pending {
+  color: var(--pos-warn);
+}
+.cfg__sync-sep {
+  height: 1px;
+  background: var(--pos-border-subtle);
+  margin: 18px 0 14px;
+}
 .cfg__hint {
   font-size: 12px;
   color: var(--pos-text-3);
@@ -422,5 +654,21 @@ async function save(): Promise<void> {
   color: #d33;
   font-weight: 800;
   font-size: 14px;
+}
+.cfg__shift {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.cfg__shift-name {
+  flex: 1;
+}
+.cfg__shift-time {
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--pos-border-medium);
+  border-radius: 6px;
+  font: inherit;
 }
 </style>

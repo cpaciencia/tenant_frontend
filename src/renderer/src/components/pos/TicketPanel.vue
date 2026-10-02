@@ -4,10 +4,19 @@ import { usePosStore } from '../../stores/pos'
 import { eur } from '../../data/catalog'
 
 const store = usePosStore()
-const { ticket, selectedKey, isEmpty, lineCount, base, iva, total } = storeToRefs(store)
+const { ticket, selectedKey, isEmpty, lineCount, base, iva, total, lastSale, parkedCount } =
+  storeToRefs(store)
+const emit = defineEmits<{ (e: 'open-parked'): void }>()
 
-// Fixed sample ticket number; the real number is allocated by createSale().
-const ticketNo = '0087'
+async function park(): Promise<void> {
+  try {
+    await store.parkCurrent()
+  } catch {
+    /* the ticket stays in place if parking fails */
+  }
+}
+// The number of THIS ticket is only allocated when it is paid (createSale(), inside
+// the sale transaction), so the header shows the last one actually issued.
 </script>
 
 <template>
@@ -15,11 +24,33 @@ const ticketNo = '0087'
     <div class="ticket__head">
       <div>
         <div class="ticket__title">Ticket</div>
-        <div class="ticket__sub">Nº {{ ticketNo }} · {{ lineCount }} art.</div>
+        <div class="ticket__sub">
+          {{ lineCount }} art.<template v-if="lastSale">
+            · último: {{ lastSale.ticketNumber }}</template
+          >
+        </div>
       </div>
-      <button class="ticket__clear" @click="store.clearTicket()">
-        <i class="pi pi-trash"></i> Vaciar
-      </button>
+      <div class="ticket__actions">
+        <button
+          v-if="parkedCount > 0"
+          class="ticket__btn ticket__btn--parked"
+          title="Tickets aparcados: pulsa para recuperar uno"
+          @click="emit('open-parked')"
+        >
+          <i class="pi pi-inbox"></i> Aparcados <b>{{ parkedCount }}</b>
+        </button>
+        <button
+          class="ticket__btn"
+          :disabled="isEmpty"
+          title="Apartar este ticket para cobrar a otro cliente y recuperarlo luego"
+          @click="park"
+        >
+          <i class="pi pi-pause"></i> Aparcar
+        </button>
+        <button class="ticket__clear" @click="store.voidTicket()">
+          <i class="pi pi-trash"></i> Vaciar
+        </button>
+      </div>
     </div>
 
     <div class="ticket__lines">
@@ -37,7 +68,10 @@ const ticketNo = '0087'
         @click="store.selectLine(l.key)"
       >
         <div class="line__info">
-          <div class="line__name">{{ l.name }}</div>
+          <div class="line__name">
+            {{ l.name }}
+            <span v-if="l.manual?.kind === 'not_found'" class="line__manual">No encontrado</span>
+          </div>
           <div class="line__meta">{{ l.qty }} × {{ eur(l.price) }}</div>
         </div>
         <div class="line__controls">
@@ -91,14 +125,52 @@ const ticketNo = '0087'
   justify-content: space-between;
 }
 .ticket__title {
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 900;
   color: var(--pos-green-dark);
 }
 .ticket__sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--pos-text-3);
   font-weight: 700;
+}
+.ticket__actions {
+  display: flex;
+  gap: 8px;
+}
+.ticket__btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 13px;
+  background: #f8fafc;
+  color: var(--pos-green-dark);
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 8px;
+  border: 1px solid var(--pos-border-subtle);
+  transition: all 0.12s ease;
+}
+.ticket__btn:hover:not(:disabled) {
+  background: var(--pos-green-soft);
+  border-color: var(--pos-green);
+}
+.ticket__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ticket__btn--parked {
+  background: var(--pos-warn-bg);
+  color: var(--pos-warn);
+  border-color: transparent;
+}
+.ticket__btn--parked b {
+  background: var(--pos-warn);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 12px;
 }
 .ticket__clear {
   display: flex;
@@ -151,11 +223,11 @@ const ticketNo = '0087'
 .line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 13px 14px;
   border-radius: 11px;
   cursor: pointer;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 .line--selected {
   background: var(--pos-green-soft);
@@ -166,7 +238,7 @@ const ticketNo = '0087'
   min-width: 0;
 }
 .line__name {
-  font-size: 14px;
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--pos-text);
   white-space: nowrap;
@@ -174,10 +246,10 @@ const ticketNo = '0087'
   text-overflow: ellipsis;
 }
 .line__meta {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--pos-text-3);
   font-weight: 600;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .line__controls {
   display: flex;
@@ -185,10 +257,10 @@ const ticketNo = '0087'
   gap: 6px;
 }
 .line__btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  font-size: 14px;
+  width: 33px;
+  height: 33px;
+  border-radius: 8px;
+  font-size: 16px;
   font-weight: 900;
   display: flex;
   align-items: center;
@@ -211,16 +283,17 @@ const ticketNo = '0087'
   color: #fff;
 }
 .line__qty {
-  min-width: 24px;
+  min-width: 26px;
   text-align: center;
   font-weight: 900;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--pos-green-dark);
 }
 .line__total {
-  width: 70px;
+  width: 84px;
   text-align: right;
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 800;
   color: var(--pos-green-dark);
 }
 .line__del {
@@ -242,7 +315,7 @@ const ticketNo = '0087'
 }
 .ticket__foot {
   flex: 0 0 auto;
-  padding: 14px 18px;
+  padding: 16px 20px;
   background: #fbfcfd;
   border-top: 1px solid var(--pos-border-subtle);
 }
@@ -250,7 +323,7 @@ const ticketNo = '0087'
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--pos-text-2);
   font-weight: 600;
   margin-bottom: 6px;
@@ -270,14 +343,26 @@ const ticketNo = '0087'
   white-space: nowrap;
 }
 .ticket__total-label {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--pos-green-dark);
 }
 .ticket__total-val {
-  font-size: 30px;
+  font-size: 37px;
   color: var(--pos-green);
   letter-spacing: -0.01em;
   flex: 0 0 auto;
+}
+.line__manual {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  background: var(--pos-warn-bg);
+  color: var(--pos-warn);
 }
 </style>

@@ -89,7 +89,9 @@ async function unenroll(): Promise<void> {
       <i class="pi pi-check-circle"></i>
       <div>
         <div class="enroll__status-title">Terminal enrolado</div>
-        <div class="enroll__status-sub">Puesto <b>{{ enrolledTerminalId }}</b> · {{ form.syncApiUrl }}</div>
+        <div class="enroll__status-sub">
+          Puesto <b>{{ enrolledTerminalId }}</b> · {{ form.syncApiUrl }}
+        </div>
       </div>
       <Button label="Re-enrolar" severity="secondary" size="small" outlined @click="unenroll" />
     </div>
@@ -97,7 +99,12 @@ async function unenroll(): Promise<void> {
     <template v-else>
       <label class="enroll__label" for="enroll-url">URL del backend</label>
       <div class="enroll__row">
-        <InputText id="enroll-url" v-model="form.syncApiUrl" class="enroll__grow" placeholder="http://localhost:8080" />
+        <InputText
+          id="enroll-url"
+          v-model="form.syncApiUrl"
+          class="enroll__grow"
+          placeholder="http://localhost:7071"
+        />
         <Button
           label="Probar"
           icon="pi pi-wifi"
@@ -120,7 +127,9 @@ async function unenroll(): Promise<void> {
       <label class="enroll__label" for="enroll-code">Código de enrolamiento</label>
       <InputText id="enroll-code" v-model="form.code" class="enroll__code" placeholder="XXXXXXXX" />
 
-      <div v-if="error" class="enroll__error"><i class="pi pi-exclamation-circle"></i> {{ error }}</div>
+      <div v-if="error" class="enroll__error">
+        <i class="pi pi-exclamation-circle"></i> {{ error }}
+      </div>
 
       <Button
         label="Enrolar terminal"

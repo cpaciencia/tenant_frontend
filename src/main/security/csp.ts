@@ -13,7 +13,12 @@ const BASE_DIRECTIVES = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:"
+  // blob: = invoice files downloaded with the session token and previewed in-app.
+  "img-src 'self' data: blob:",
+  // Bundled fonts (Lato, Playfair, PrimeIcons) are inlined by Vite as data: URIs
+  // in the production build; without this they're blocked and the UI falls back
+  // to system fonts and loses its icons.
+  "font-src 'self' data:"
 ]
 
 /** Extract the scheme://host:port origin of a URL, or null if it can't be parsed. */

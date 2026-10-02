@@ -86,16 +86,16 @@ function cajaCode(id: string): string {
 async function load(): Promise<void> {
   loading.value = true
   error.value = ''
-  try {
-    ;[categories.value, groups.value] = await Promise.all([
-      listCategories(),
-      listAccountingGroups()
-    ])
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'No se pudieron cargar las categorías'
-  } finally {
-    loading.value = false
+  // Load independently: a failure fetching cajas (e.g. a missing permission) must
+  // not also wipe the categories list — they are separate concerns on this screen.
+  const [cats, grps] = await Promise.allSettled([listCategories(), listAccountingGroups()])
+  if (cats.status === 'fulfilled') categories.value = cats.value
+  if (grps.status === 'fulfilled') groups.value = grps.value
+  const failed = [cats, grps].filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
+  if (failed.length) {
+    error.value = failed[0].reason instanceof Error ? failed[0].reason.message : 'Error al cargar'
   }
+  loading.value = false
 }
 
 async function hydrate(values: Partial<typeof form>): Promise<void> {
@@ -150,7 +150,7 @@ async function submit(): Promise<void> {
     return
   }
   if (!form.accountingGroupId) {
-    formError.value = 'La caja por categoría es obligatoria'
+    formError.value = 'El grupo contable es obligatorio'
     return
   }
   saving.value = true
@@ -204,7 +204,7 @@ onMounted(load)
     </div>
 
     <p v-if="groups.length === 0 && !loading" class="bo-hint">
-      Crea primero una <strong>Caja por categoría</strong>: cada categoría debe asociarse a una.
+      Crea primero un <strong>grupo contable</strong>: cada categoría debe asociarse a uno.
     </p>
 
     <DataTable :value="filtered" :loading="loading" data-key="id" class="bo-card">
@@ -281,14 +281,21 @@ onMounted(load)
           Esta categoría tiene subcategorías, por eso no puede depender de otra.
         </small>
 
-        <label>Caja por categoría</label>
+        <label>Grupo contable</label>
         <Select
           v-model="form.accountingGroupId"
           :options="groupOptions"
           option-label="label"
           option-value="id"
-          placeholder="Selecciona una caja"
+          placeholder="Selecciona un grupo contable"
+          :disabled="!!form.parentId"
         />
+        <small v-if="form.parentId" class="bo-note">
+          Una subcategoría siempre va al grupo contable de su categoría madre.
+        </small>
+        <small v-else-if="hasChildren" class="bo-note">
+          Sus subcategorías cambiarán también a este grupo contable.
+        </small>
 
         <div class="bo-grid2">
           <div>

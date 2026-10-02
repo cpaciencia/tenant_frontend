@@ -4,6 +4,7 @@ import { runMigrations } from '../db/migrator'
 import {
   listCategories,
   upsertCategories,
+  replaceCategories,
   getCategoriesWatermark,
   countCategories,
   type MirroredCategory
@@ -50,6 +51,27 @@ describe('categories mirror repository', () => {
       accountingGroupId: 'BARRA',
       active: true
     })
+  })
+
+  it('replaceCategories drops orphan rows (old ids) left after a backend reset', () => {
+    // Simulate: the mirror holds the pre-reset categories (old ids)...
+    upsertCategories(db, [
+      cat({ id: 'old-1', name: 'Bebidas' }),
+      cat({ id: 'old-2', name: 'Snacks' })
+    ])
+    // ...then a clean re-pull brings the same categories with NEW ids.
+    const fresh = replaceCategories(db, [
+      cat({ id: 'new-1', name: 'Bebidas' }),
+      cat({ id: 'new-2', name: 'Snacks' })
+    ])
+    expect(fresh).toBe(2)
+    // No duplicates: only the new set survives (a plain upsert would have left 4).
+    expect(countCategories(db)).toBe(2)
+    expect(
+      listCategories(db)
+        .map((c) => c.id)
+        .sort()
+    ).toEqual(['new-1', 'new-2'])
   })
 
   it('tracks the max updatedAt as the watermark', () => {

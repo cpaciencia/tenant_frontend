@@ -74,3 +74,13 @@ export function upsertAccountingGroups(db: DB, groups: MirroredAccountingGroup[]
   })
   return txn(groups)
 }
+
+/** Atomically replaces the accounting-group mirror (clears orphan rows after a backend reset). */
+export function replaceAccountingGroups(db: DB, groups: MirroredAccountingGroup[]): number {
+  const txn = db.transaction((items: MirroredAccountingGroup[]) => {
+    db.prepare('DELETE FROM accounting_groups').run()
+    upsertAccountingGroups(db, items)
+    return items.length
+  })
+  return txn(groups)
+}

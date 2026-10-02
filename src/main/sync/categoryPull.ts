@@ -2,6 +2,7 @@ import type { DB } from '../db/connection'
 import {
   getCategoriesWatermark,
   upsertCategories,
+  replaceCategories,
   type MirroredCategory
 } from '../repositories/categories'
 
@@ -31,9 +32,12 @@ function normalizeBase(baseUrl: string): string {
 export async function pullCategories(
   db: DB,
   baseUrl: string,
-  fetchFn: FetchLike = fetch
+  fetchFn: FetchLike = fetch,
+  opts: { full?: boolean } = {}
 ): Promise<number> {
-  const watermark = getCategoriesWatermark(db)
+  // `full` ignores the watermark and replaces the mirror wholesale — used to clear
+  // orphan rows (e.g. duplicates) after the backend was reset/re-imported.
+  const watermark = opts.full ? null : getCategoriesWatermark(db)
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/catalog/categories${query}`, {
     method: 'GET',
@@ -53,5 +57,5 @@ export async function pullCategories(
     active: c.active,
     updatedAt: c.updatedAt
   }))
-  return upsertCategories(db, mapped)
+  return opts.full ? replaceCategories(db, mapped) : upsertCategories(db, mapped)
 }

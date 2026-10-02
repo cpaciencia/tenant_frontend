@@ -224,5 +224,258 @@ export const migrations: Migration[] = [
     down: async () => {
       // Disposable in dev (SQLite can't drop columns pre-3.35 without a rebuild).
     }
+  },
+  {
+    name: '0009-cash-sessions',
+    up: async ({ context: db }) => {
+      // Per-cashier till session ("caja"). A cashier opens her own caja with a float;
+      // every sale she makes is tagged to it; she closes it with a cash count (arqueo).
+      // Several cajas can be open at once on one terminal (shift overlap): each sale
+      // lands in the caja of the cashier who made it, and each reconciles only her own.
+      db.exec(`
+        CREATE TABLE cash_sessions (
+          id                    TEXT PRIMARY KEY,
+          terminal_id           TEXT NOT NULL,
+          cashier_user_id       TEXT,
+          cashier_name          TEXT NOT NULL,
+          opened_at             TEXT NOT NULL,
+          opening_float_cents   INTEGER NOT NULL DEFAULT 0,
+          status                TEXT NOT NULL DEFAULT 'open',
+          closed_at             TEXT,
+          expected_cash_cents   INTEGER,
+          counted_cash_cents    INTEGER,
+          difference_cents      INTEGER,
+          closing_float_cents   INTEGER,
+          sales_count           INTEGER NOT NULL DEFAULT 0,
+          total_cents           INTEGER NOT NULL DEFAULT 0,
+          tenders_json          TEXT NOT NULL DEFAULT '{}',
+          breakdown_json        TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE INDEX idx_cash_sessions_status ON cash_sessions (status);
+
+        ALTER TABLE sales ADD COLUMN cash_session_id TEXT;
+        ALTER TABLE sales ADD COLUMN cashier_user_id TEXT;
+        ALTER TABLE sales ADD COLUMN cashier_name    TEXT;
+        CREATE INDEX idx_sales_cash_session ON sales (cash_session_id);
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS cash_sessions;')
+    }
+  },
+  {
+    name: '0010-unify-cierre',
+    up: async ({ context: db }) => {
+      // Unify the two closings into one. The cashier's caja (arqueo) becomes the
+      // ONLY cierre and now carries the fiscal per-terminal sequential Z number.
+      // The separate `z_closures` table is dropped: sales are already sealed by
+      // their `cash_session_id` (stamped at sale time in createSale), so nothing
+      // needs re-linking. The now-unused `sales.z_closure_id` column is left in
+      // place (SQLite can't drop a column pre-3.35 without a table rebuild) — it
+      // is simply no longer written.
+      db.exec(`
+        ALTER TABLE cash_sessions ADD COLUMN z_number INTEGER;
+        DROP TABLE IF EXISTS z_closures;
+      `)
+    },
+    down: async ({ context: db }) => {
+      // Dev rollback: recreate z_closures. The z_number column is left dangling
+      // (SQLite can't drop columns pre-3.35 without a rebuild).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS z_closures (
+          id             TEXT PRIMARY KEY,
+          terminal_id    TEXT NOT NULL,
+          z_number       INTEGER NOT NULL,
+          closed_at      TEXT NOT NULL,
+          total_cents    INTEGER NOT NULL DEFAULT 0,
+          sales_count    INTEGER NOT NULL DEFAULT 0,
+          breakdown_json TEXT NOT NULL DEFAULT '[]',
+          created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+          UNIQUE (terminal_id, z_number)
+        );
+      `)
+    }
+  },
+  {
+    name: '0011-shift-cajas',
+    up: async ({ context: db }) => {
+      // A caja now belongs to a SHIFT (turno) on a business date, not to a cashier:
+      // one open caja per terminal, everyone on duty sells into it with their own
+      // user (sales.cashier_* now records the seller). The cierre also stores who
+      // closed it, the per-client fiado list and the per-seller totals. The caja a
+      // cierre leaves open has no responsible until someone accepts it at login.
+      // `sales.client_name` snapshots who a fiado was credited to.
+      db.exec(`
+        ALTER TABLE cash_sessions ADD COLUMN shift_id          TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN shift_name        TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN business_date     TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN responsible_user_id TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN responsible_name    TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN accepted_at       TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN closed_by_user_id TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN closed_by_name    TEXT;
+        ALTER TABLE cash_sessions ADD COLUMN fiados_json       TEXT NOT NULL DEFAULT '[]';
+        ALTER TABLE cash_sessions ADD COLUMN sellers_json      TEXT NOT NULL DEFAULT '[]';
+        CREATE INDEX idx_cash_sessions_terminal_status ON cash_sessions (terminal_id, status);
+
+        ALTER TABLE sales ADD COLUMN client_name TEXT;
+      `)
+    },
+    down: async () => {
+      // Dev rollback: the added columns are left dangling (SQLite can't drop
+      // columns pre-3.35 without a table rebuild).
+    }
+  },
+  {
+    name: '0012-float-adjustments',
+    up: async ({ context: db }) => {
+      // The drawer float of an open caja can be corrected (e.g. the arriving
+      // cashier counts it on acceptance). Every correction is kept for the cierre:
+      // who, when, from → to. JSON array, like the other cierre details.
+      db.exec(
+        `ALTER TABLE cash_sessions ADD COLUMN float_adjustments_json TEXT NOT NULL DEFAULT '[]';`
+      )
+    },
+    down: async () => {
+      // Dev rollback: column left dangling (no DROP COLUMN pre-3.35).
+    }
+  },
+  {
+    name: '0013-pending-items-audit',
+    up: async ({ context: db }) => {
+      // pending_items: lines sold without a catalog product ("Producto rápido" or a
+      // scanned barcode that wasn't found), waiting to be completed into a real
+      // product or dismissed.
+      // audit_events: append-only log of everything that happens on the till
+      // (sales, voids, logins, cajas…), synced to the backend for analytics.
+      db.exec(`
+        CREATE TABLE pending_items (
+          id                  TEXT PRIMARY KEY,
+          terminal_id         TEXT NOT NULL,
+          sale_id             TEXT NOT NULL,
+          ticket_number       TEXT NOT NULL,
+          kind                TEXT NOT NULL,
+          barcode             TEXT,
+          name                TEXT,
+          category_id         TEXT,
+          price_cents         INTEGER NOT NULL,
+          quantity            REAL NOT NULL,
+          created_at          TEXT NOT NULL,
+          created_by_user_id  TEXT,
+          created_by_name     TEXT NOT NULL,
+          status              TEXT NOT NULL DEFAULT 'pending',
+          product_id          TEXT,
+          resolved_at         TEXT,
+          resolved_by_user_id TEXT,
+          resolved_by_name    TEXT
+        );
+        CREATE INDEX idx_pending_items_status ON pending_items (status, created_at);
+
+        CREATE TABLE audit_events (
+          id              TEXT PRIMARY KEY,
+          occurred_at     TEXT NOT NULL,
+          terminal_id     TEXT NOT NULL,
+          user_id         TEXT,
+          user_name       TEXT,
+          type            TEXT NOT NULL,
+          cash_session_id TEXT,
+          entity_id       TEXT,
+          data_json       TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_audit_events_time ON audit_events (occurred_at);
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS audit_events; DROP TABLE IF EXISTS pending_items;')
+    }
+  },
+  {
+    name: '0014-parked-tickets',
+    up: async ({ context: db }) => {
+      // Tickets set aside unpaid (to serve another customer) and resumed later.
+      // Local to the till; parking/resuming/discarding is recorded in the audit log.
+      db.exec(`
+        CREATE TABLE parked_tickets (
+          id                 TEXT PRIMARY KEY,
+          terminal_id        TEXT NOT NULL,
+          draft_id           TEXT,
+          parked_at          TEXT NOT NULL,
+          parked_by_user_id  TEXT,
+          parked_by_name     TEXT NOT NULL,
+          lines_json         TEXT NOT NULL,
+          total_cents        INTEGER NOT NULL
+        );
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS parked_tickets;')
+    }
+  },
+  {
+    name: '0015-cash-movements',
+    up: async ({ context: db }) => {
+      // Cash in/out of the drawer that is not a sale: supplier payments and money
+      // put into / taken out of the drawer. Part of the arqueo; sealed into
+      // the cierre (movements_json) like the other details.
+      db.exec(`
+        CREATE TABLE cash_movements (
+          id              TEXT PRIMARY KEY,
+          terminal_id     TEXT NOT NULL,
+          cash_session_id TEXT NOT NULL,
+          kind            TEXT NOT NULL,
+          amount_cents    INTEGER NOT NULL,
+          supplier        TEXT,
+          document        TEXT,
+          note            TEXT,
+          user_id         TEXT,
+          user_name       TEXT NOT NULL,
+          created_at      TEXT NOT NULL
+        );
+        CREATE INDEX idx_cash_movements_session ON cash_movements (cash_session_id);
+        ALTER TABLE cash_sessions ADD COLUMN movements_json TEXT NOT NULL DEFAULT '[]';
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS cash_movements;')
+    }
+  },
+  {
+    name: '0016-suppliers-invoices',
+    up: async ({ context: db }) => {
+      // Suppliers mirror (pulled from the backend; a till may add one offline) and
+      // the invoice state of each supplier payment. A payment's invoice is stored
+      // by the server; until then it is 'pending' and the caja cannot be closed.
+      // Payments recorded before this feature have no requirement (NULL).
+      db.exec(`
+        CREATE TABLE suppliers (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          active     INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX ux_suppliers_name ON suppliers (name COLLATE NOCASE);
+        ALTER TABLE cash_movements ADD COLUMN supplier_id TEXT;
+        ALTER TABLE cash_movements ADD COLUMN invoice_status TEXT;
+        ALTER TABLE cash_movements ADD COLUMN invoice_file_name TEXT;
+        ALTER TABLE cash_movements ADD COLUMN invoice_uploaded_at TEXT;
+      `)
+    },
+    down: async ({ context: db }) => {
+      db.exec('DROP TABLE IF EXISTS suppliers;')
+    }
+  },
+  {
+    name: '0017-pending-invoices-open-caja',
+    up: async ({ context: db }) => {
+      // Supplier payments recorded in the still-open caja before invoices existed
+      // (or by an outdated app) also need their invoice: mark them pending. Those
+      // whose invoice is already on the server get reconciled by the till.
+      db.exec(`
+        UPDATE cash_movements SET invoice_status = 'pending'
+         WHERE kind = 'supplier_payment' AND invoice_status IS NULL
+           AND cash_session_id IN (SELECT id FROM cash_sessions WHERE status = 'open');
+      `)
+    },
+    down: async () => {}
   }
 ]

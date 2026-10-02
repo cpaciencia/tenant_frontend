@@ -50,7 +50,7 @@ If `terminal.enc` is absent the app shows Setup; if present it calls
 
 1. Register the terminal (admin). You can hit the endpoint:
    ```bash
-   curl -s -X POST http://localhost:8080/api/terminals \
+   curl -s -X POST http://localhost:7071/api/terminals \
      -H 'Content-Type: application/json' \
      -d '{"terminalId":"T01","name":"Caja principal"}'
    ```

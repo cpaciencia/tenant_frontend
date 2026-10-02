@@ -74,3 +74,22 @@ describe('SyncWorker.runOnce', () => {
     expect(getPending(db, 10, 5)).toHaveLength(0)
   })
 })
+
+describe('SyncWorker.drain', () => {
+  it('drains every pending row across multiple batches', async () => {
+    // 5 rows with batchSize 2 needs 3 batches; drain should clear them all.
+    enqueue('d', '2026-01-04T00:00:00.000Z')
+    enqueue('e', '2026-01-05T00:00:00.000Z')
+    const worker = new SyncWorker(db, okClient, { batchSize: 2 })
+    const synced = await worker.drain()
+    expect(synced).toBe(5)
+    expect(countPending(db)).toBe(0)
+  })
+
+  it('stops without spinning when the backend is unreachable', async () => {
+    const worker = new SyncWorker(db, retryableClient)
+    const synced = await worker.drain()
+    expect(synced).toBe(0)
+    expect(countPending(db)).toBe(3)
+  })
+})

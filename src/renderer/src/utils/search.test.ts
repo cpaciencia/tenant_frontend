@@ -32,7 +32,9 @@ describe('search util', () => {
   })
 
   it('tolerates typos (fuzzy)', () => {
-    expect(names(fuzzySearch(items, 'agau', (p) => [p.name, p.barcode]))).toContain('Agua Mineral 1,5L')
+    expect(names(fuzzySearch(items, 'agau', (p) => [p.name, p.barcode]))).toContain(
+      'Agua Mineral 1,5L'
+    )
     expect(names(fuzzySearch(items, 'vino tnto', (p) => [p.name]))).toContain('Vino Tinto Crianza')
   })
 

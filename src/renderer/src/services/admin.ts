@@ -147,6 +147,8 @@ export interface AdminProduct {
   barcode: string | null
   name: string
   priceCents: number
+  /** Unit purchase price; 0 = not entered yet (shown as missing). */
+  costCents: number
   taxRate: number
   categoryId: string | null
   active: boolean
@@ -157,6 +159,7 @@ export interface ProductUpsertBody {
   barcode?: string | null
   name: string
   priceCents: number
+  costCents?: number
   taxRate: number
   categoryId: string
   active?: boolean
@@ -194,28 +197,11 @@ export const importLegacy = (categorias: File, productos: File): Promise<ImportS
   return apiFetch('/api/admin/import/legacy', { method: 'POST', body: form })
 }
 
-// --- Reporting: closures (cajas) + tickets (backend, web + desktop) ---
-export interface ClosureView {
-  id: string
-  terminalId: string
-  zNumber: number
-  closedAt: string
-  totalCents: number
-  salesCount: number
-}
-
+// --- Reporting: cierres de caja + tickets (backend, web + desktop) ---
 export interface BreakdownRow {
   accountingGroupId: string | null
   code: string
   name: string
-  totalCents: number
-}
-
-export interface TicketView {
-  id: string
-  ticketNumber: string
-  terminalId: string
-  createdAt: string
   totalCents: number
 }
 
@@ -226,13 +212,6 @@ export interface Tenders {
   creditCents: number
 }
 
-export interface ClosureDetail {
-  closure: ClosureView
-  tenders: Tenders
-  breakdown: BreakdownRow[]
-  tickets: TicketView[]
-}
-
 export interface CurrentTill {
   totalCents: number
   salesCount: number
@@ -240,22 +219,321 @@ export interface CurrentTill {
   breakdown: BreakdownRow[]
 }
 
-export interface TicketLineView {
-  productId: string | null
+/** Pending till: sales made but not yet sealed by a cierre (open cajas). */
+export const getCurrentTill = (): Promise<CurrentTill> => apiFetch('/api/cash-sessions/current')
+
+/** A credit ("fiado") sale inside a cierre. */
+export interface FiadoView {
+  saleId: string
+  ticketNumber: string
+  clientId: string | null
+  clientName: string
+  amountCents: number
+  createdAt: string
+}
+
+/** Takings of one user inside a caja. */
+export interface SellerView {
+  userId: string | null
   name: string
+  salesCount: number
+  totalCents: number
+}
+
+/**
+ * A cierre de caja as projected on the backend — the single closing. A caja
+ * belongs to a shift (turno) on a business date; `responsibleName` answers for
+ * it and `closedByName` did the arqueo. `zNumber` is the fiscal per-terminal
+ * sequential number, allocated at close.
+ */
+export interface CashSessionView {
+  id: string
+  terminalId: string
+  shiftId: string | null
+  shiftName: string | null
+  businessDate: string | null
+  cashierUserId: string | null
+  cashierName: string
+  responsibleUserId: string | null
+  responsibleName: string | null
+  closedByUserId: string | null
+  closedByName: string | null
+  openedAt: string
+  openingFloatCents: number
+  status: 'open' | 'closed'
+  closedAt: string | null
+  expectedCashCents: number | null
+  countedCashCents: number | null
+  differenceCents: number | null
+  closingFloatCents: number | null
+  zNumber: number | null
+  salesCount: number
+  totalCents: number
+  tenders: Tenders
+  breakdown: BreakdownRow[]
+  fiados: FiadoView[]
+  sellers: SellerView[]
+  /** Supplier payments and cash in/out of the caja. */
+  cashMovements: {
+    id: string
+    kind: string
+    amountCents: number
+    supplier: string | null
+    document: string | null
+    note: string | null
+    userName: string
+    createdAt: string
+  }[]
+  /** Corrections of the drawer float while the caja was open. */
+  floatAdjustments: {
+    at: string
+    userId: string | null
+    userName: string
+    fromCents: number
+    toCents: number
+  }[]
+}
+
+export const listCashSessions = (): Promise<CashSessionView[]> => apiFetch('/api/cash-sessions')
+/** Cajas open right now (one per terminal), with live figures from the synced sales. */
+export const listOpenCashSessions = (): Promise<CashSessionView[]> =>
+  apiFetch('/api/cash-sessions/open')
+
+// --- Pending items (lines sold by price without a catalog product) ---
+
+/** The real product to create for a pending line. */
+export interface CompletePendingBody {
+  name: string
+  categoryId: string
+  priceCents: number
+  costCents: number
+  taxRate: number
+  barcode: string | null
+}
+
+/**
+ * Create the catalog product for a pending line (permission `pending_item:resolve`)
+ * and link its sales when the server already has it.
+ */
+export const completePendingOnServer = (
+  id: string,
+  body: CompletePendingBody
+): Promise<{ product: AdminProduct; linked: boolean }> =>
+  apiFetch(`/api/pending-items/${id}/complete`, { method: 'POST', body: JSON.stringify(body) })
+
+// --- Actividad (audit log + per-user figures; permission `activity:read`) ---
+
+export interface ActivityEvent {
+  id: string
+  type: string
+  occurredAt: string
+  terminalId: string
+  userId: string | null
+  userName: string | null
+  cashSessionId: string | null
+  entityId: string | null
+  data: Record<string, unknown>
+}
+
+export interface ActivityEventPage {
+  total: number
+  page: number
+  size: number
+  items: ActivityEvent[]
+}
+
+export interface ActivityTotals {
+  tickets: number
+  salesCents: number
+  manualLines: number
+  manualCents: number
+  linesRemoved: number
+  linesRemovedCents: number
+  ticketsCleared: number
+  ticketsClearedCents: number
+  paymentsCancelled: number
+  /** Voids after opening the payment / typing cash, discarded parked tickets… */
+  suspicious: number
+  scansNotFound: number
+  failedLogins: number
+  pendingOpen: number
+  cashDifferenceCents: number
+}
+
+export interface UserActivity {
+  userName: string
+  tickets: number
+  salesCents: number
+  avgTicketCents: number
+  manualLines: number
+  manualCents: number
+  linesRemoved: number
+  linesRemovedCents: number
+  qtyDecreased: number
+  ticketsCleared: number
+  ticketsClearedCents: number
+  paymentsCancelled: number
+  /** Voids after opening the payment / typing cash, discarded parked tickets… */
+  suspicious: number
+  scansNotFound: number
+  logins: number
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
+export interface ActivitySummary {
+  from: string
+  to: string
+  totals: ActivityTotals
+  users: UserActivity[]
+  byHour: { hour: number; tickets: number; salesCents: number }[]
+  byDay: { date: string; tickets: number; salesCents: number; manualLines: number }[]
+  cajas: {
+    cashSessionId: string
+    terminalId: string
+    shiftName: string | null
+    businessDate: string | null
+    zNumber: number | null
+    responsibleName: string | null
+    closedByName: string | null
+    closedAt: string | null
+    totalCents: number
+    differenceCents: number | null
+    floatCorrections: number
+  }[]
+  failedLogins: { occurredAt: string; terminalId: string; username: string | null }[]
+}
+
+export interface ActivityQuery {
+  from: string
+  to: string
+  terminal?: string | null
+  user?: string | null
+  types?: string[]
+  q?: string
+  page?: number
+  size?: number
+}
+
+function activityParams(q: ActivityQuery): string {
+  const p = new URLSearchParams({ from: q.from, to: q.to })
+  if (q.terminal) p.set('terminal', q.terminal)
+  if (q.user) p.set('user', q.user)
+  if (q.types?.length) p.set('types', q.types.join(','))
+  if (q.q?.trim()) p.set('q', q.q.trim())
+  if (q.page !== undefined) p.set('page', String(q.page))
+  if (q.size !== undefined) p.set('size', String(q.size))
+  return p.toString()
+}
+
+export const getActivityEvents = (q: ActivityQuery): Promise<ActivityEventPage> =>
+  apiFetch(`/api/activity/events?${activityParams(q)}`)
+
+export const getActivitySummary = (q: ActivityQuery): Promise<ActivitySummary> =>
+  apiFetch(
+    `/api/activity/summary?${activityParams({ from: q.from, to: q.to, terminal: q.terminal })}`
+  )
+
+export const getActivityFilters = (): Promise<{
+  users: string[]
+  terminals: string[]
+  types: string[]
+}> => apiFetch('/api/activity/filters')
+
+// --- Ticket browser (filters by period, caja, seller, payment…; `sale:read`) ---
+
+export interface TicketRow {
+  saleId: string
+  ticketNumber: string
+  terminalId: string
+  createdAt: string
+  sellerName: string | null
+  cashSessionId: string | null
+  shiftName: string | null
+  businessDate: string | null
+  zNumber: number | null
+  cajaStatus: string | null
+  cajaResponsible: string | null
+  paymentMethod: 'efectivo' | 'tarjeta' | 'mixto' | 'a_cuenta'
+  totalCents: number
+  cashCents: number
+  cardCents: number
+  creditCents: number
+  creditClient: string | null
+  lines: number
+  manualLines: number
+}
+
+export interface TicketPage {
+  total: number
+  totalCents: number
+  page: number
+  size: number
+  items: TicketRow[]
+}
+
+export interface TicketFullLine {
+  productId: string | null
+  productName: string | null
+  barcode: string | null
+  topCategory: string | null
+  subcategory: string | null
+  accountingGroup: string | null
   quantity: number
   unitPriceCents: number
   lineCents: number
+  manual: boolean
+  manualKind: string | null
+  manualBarcode: string | null
 }
 
-export interface TicketDetail {
-  ticket: TicketView
-  lines: TicketLineView[]
+export interface TicketFull {
+  ticket: TicketRow
+  lines: TicketFullLine[]
+  history: ActivityEvent[]
 }
 
-export const listClosures = (): Promise<ClosureView[]> => apiFetch('/api/closures')
-export const getCurrentTill = (): Promise<CurrentTill> => apiFetch('/api/closures/current')
-export const getClosure = (id: string): Promise<ClosureDetail> => apiFetch(`/api/closures/${id}`)
-export const listTickets = (page = 0, size = 50): Promise<TicketView[]> =>
-  apiFetch(`/api/tickets?page=${page}&size=${size}`)
-export const getTicket = (id: string): Promise<TicketDetail> => apiFetch(`/api/tickets/${id}`)
+export interface CajaOption {
+  cashSessionId: string
+  terminalId: string
+  shiftName: string | null
+  businessDate: string | null
+  zNumber: number | null
+  status: string
+  responsibleName: string | null
+}
+
+export interface TicketQuery {
+  from: string
+  to: string
+  terminal?: string | null
+  caja?: string | null
+  seller?: string | null
+  method?: string | null
+  q?: string
+  manualOnly?: boolean
+  page?: number
+  size?: number
+}
+
+export function searchTickets(q: TicketQuery): Promise<TicketPage> {
+  const p = new URLSearchParams({ from: q.from, to: q.to })
+  if (q.terminal) p.set('terminal', q.terminal)
+  if (q.caja) p.set('caja', q.caja)
+  if (q.seller) p.set('seller', q.seller)
+  if (q.method) p.set('method', q.method)
+  if (q.q?.trim()) p.set('q', q.q.trim())
+  if (q.manualOnly) p.set('manualOnly', 'true')
+  p.set('page', String(q.page ?? 0))
+  p.set('size', String(q.size ?? 50))
+  return apiFetch(`/api/tickets/search?${p.toString()}`)
+}
+
+export const getTicketFull = (id: string): Promise<TicketFull> =>
+  apiFetch(`/api/tickets/${id}/full`)
+
+export const listTicketCajas = (from: string, to: string): Promise<CajaOption[]> =>
+  apiFetch(`/api/tickets/cajas?from=${from}&to=${to}`)
+
+export const listTicketSellers = (from: string, to: string): Promise<string[]> =>
+  apiFetch(`/api/tickets/sellers?from=${from}&to=${to}`)

@@ -28,7 +28,7 @@ const app = createApp(App)
 app.use(createPinia())
 
 // Online auth: talk to the cloud backend with a Bearer token from the store.
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:7071'
 configureHttp({ baseUrl: API_URL, getToken: () => useAuthStore().token })
 setAuthProvider(createHttpAuthProvider())
 app.directive('can', vCan)

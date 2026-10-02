@@ -8,9 +8,20 @@
 let baseUrl = ''
 let getToken: () => string | null = () => null
 
+// The desktop learns its backend URL asynchronously (from the enrolment state);
+// callers that run at boot can wait for it instead of racing it.
+let markConfigured: () => void = () => {}
+const configured = new Promise<void>((resolve) => (markConfigured = resolve))
+
+/** Resolves once `configureHttp` has run at least once. */
+export function whenHttpConfigured(): Promise<void> {
+  return configured
+}
+
 export function configureHttp(opts: { baseUrl: string; getToken?: () => string | null }): void {
   baseUrl = opts.baseUrl.replace(/\/+$/, '')
   if (opts.getToken) getToken = opts.getToken
+  markConfigured()
 }
 
 export class HttpError extends Error {
@@ -51,4 +62,14 @@ async function extractError(res: Response): Promise<string> {
   if (res.status === 401) return 'No autorizado'
   if (res.status === 403) return 'No tienes permiso para esta acción'
   return `Error ${res.status}`
+}
+
+/** Like `apiFetch` but for a binary download (e.g. an invoice file). */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const token = getToken()
+  const res = await fetch(`${baseUrl}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  })
+  if (!res.ok) throw new HttpError(res.status, await extractError(res))
+  return res.blob()
 }

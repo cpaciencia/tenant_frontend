@@ -6,20 +6,18 @@ import type { AppSettings, CartState, CreateSaleRequest, EnrollRequest } from '.
 // Narrow, typed API exposed to the renderer. Each method is a thin wrapper over
 // ipcRenderer — no Node, fs, or DB access leaks across the bridge.
 const api: IpcApi = {
+  ipcChannels: Object.values(IpcChannels),
   products: {
     list: () => ipcRenderer.invoke(IpcChannels.productsList),
-    getByBarcode: (barcode: string) => ipcRenderer.invoke(IpcChannels.productsGetByBarcode, barcode)
+    getByBarcode: (barcode: string) =>
+      ipcRenderer.invoke(IpcChannels.productsGetByBarcode, barcode),
+    salesRanking: () => ipcRenderer.invoke(IpcChannels.productsSalesRanking)
   },
   categories: {
     list: () => ipcRenderer.invoke(IpcChannels.categoriesList)
   },
   sales: {
     create: (request: CreateSaleRequest) => ipcRenderer.invoke(IpcChannels.salesCreate, request)
-  },
-  zReport: {
-    preview: () => ipcRenderer.invoke(IpcChannels.zReportPreview),
-    close: () => ipcRenderer.invoke(IpcChannels.zReportClose),
-    history: () => ipcRenderer.invoke(IpcChannels.zReportHistory)
   },
   customerDisplay: {
     update: (state: CartState) => ipcRenderer.send(IpcChannels.customerDisplayUpdate, state),
@@ -45,6 +43,47 @@ const api: IpcApi = {
   auth: {
     login: (username: string, password: string) =>
       ipcRenderer.invoke(IpcChannels.authLogin, username, password)
+  },
+  sync: {
+    status: () => ipcRenderer.invoke(IpcChannels.syncStatus),
+    resyncAll: () => ipcRenderer.invoke(IpcChannels.syncResync)
+  },
+  catalog: {
+    refresh: () => ipcRenderer.invoke(IpcChannels.catalogRefresh)
+  },
+  cashSession: {
+    open: (request) => ipcRenderer.invoke(IpcChannels.cashSessionOpen, request),
+    current: () => ipcRenderer.invoke(IpcChannels.cashSessionCurrent),
+    lastClosingFloat: () => ipcRenderer.invoke(IpcChannels.cashSessionLastFloat),
+    accept: (request) => ipcRenderer.invoke(IpcChannels.cashSessionAccept, request),
+    arqueo: (sessionId: string) => ipcRenderer.invoke(IpcChannels.cashSessionArqueo, sessionId),
+    close: (request) => ipcRenderer.invoke(IpcChannels.cashSessionClose, request),
+    history: () => ipcRenderer.invoke(IpcChannels.cashSessionHistory)
+  },
+  print: {
+    savePdf: (html: string, fileName: string) =>
+      ipcRenderer.invoke(IpcChannels.printSavePdf, html, fileName)
+  },
+  pendingItems: {
+    list: () => ipcRenderer.invoke(IpcChannels.pendingItemsList),
+    complete: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsComplete, request),
+    dismiss: (request) => ipcRenderer.invoke(IpcChannels.pendingItemsDismiss, request)
+  },
+  cashMovements: {
+    record: (request) => ipcRenderer.invoke(IpcChannels.cashMovementsRecord, request),
+    current: () => ipcRenderer.invoke(IpcChannels.cashMovementsCurrent),
+    suppliers: () => ipcRenderer.invoke(IpcChannels.cashMovementsSuppliers),
+    markInvoiceUploaded: (request) =>
+      ipcRenderer.invoke(IpcChannels.cashMovementsInvoiceUploaded, request)
+  },
+  parked: {
+    list: () => ipcRenderer.invoke(IpcChannels.parkedList),
+    park: (request) => ipcRenderer.invoke(IpcChannels.parkedPark, request),
+    resume: (request) => ipcRenderer.invoke(IpcChannels.parkedResume, request),
+    discard: (request) => ipcRenderer.invoke(IpcChannels.parkedDiscard, request)
+  },
+  audit: {
+    record: (event) => ipcRenderer.invoke(IpcChannels.auditRecord, event)
   }
 }
 

@@ -50,6 +50,21 @@ export class SyncWorker {
     }
   }
 
+  /**
+   * Drains as many batches as possible right now (one batch per `runOnce`). Stops
+   * when a tick syncs nothing — queue empty, backend unreachable, or rows parked —
+   * so it never spins. `maxLoops` is a hard safety cap. Returns total rows synced.
+   */
+  async drain(maxLoops = 500): Promise<number> {
+    let total = 0
+    for (let i = 0; i < maxLoops; i++) {
+      const synced = await this.runOnce()
+      if (synced === 0) break
+      total += synced
+    }
+    return total
+  }
+
   /** Processes one batch. Returns the number of rows successfully synced. */
   async runOnce(): Promise<number> {
     if (this.running) return 0

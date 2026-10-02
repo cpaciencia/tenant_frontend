@@ -25,7 +25,7 @@ describe('enrollment service', () => {
     )
     const state = service.getState()
     expect(state.enrolled).toBe(false)
-    expect(state.syncApiUrl).toBe('http://localhost:8080')
+    expect(state.syncApiUrl).toBe('http://localhost:7071')
   })
 
   it('stores credentials, persists the URL, and runs the onEnrolled hook', async () => {
@@ -56,14 +56,9 @@ describe('enrollment service', () => {
         throw new EnrollmentError('Código o terminal incorrectos.', 401)
       }
     })
-    const service = new EnrollmentService(
-      createInMemoryBootstrapConfig(),
-      client,
-      store,
-      () => {
-        hookCalled = true
-      }
-    )
+    const service = new EnrollmentService(createInMemoryBootstrapConfig(), client, store, () => {
+      hookCalled = true
+    })
 
     const result = await service.enroll('http://h', 'T01', 'WRONG')
 

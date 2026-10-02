@@ -143,3 +143,18 @@ export function upsertMirrorProducts(db: DB, products: MirroredProduct[]): numbe
   })
   return txn(products)
 }
+
+/**
+ * Replaces the whole product mirror with the given authoritative set, atomically.
+ * Needed after a backend reset/re-import: ids change but barcodes don't, so a plain
+ * upsert-by-id both leaves orphan rows AND can hit the UNIQUE(barcode) constraint.
+ * Clearing first sidesteps both.
+ */
+export function replaceMirrorProducts(db: DB, products: MirroredProduct[]): number {
+  const txn = db.transaction((items: MirroredProduct[]) => {
+    db.prepare('DELETE FROM products').run()
+    upsertMirrorProducts(db, items)
+    return items.length
+  })
+  return txn(products)
+}

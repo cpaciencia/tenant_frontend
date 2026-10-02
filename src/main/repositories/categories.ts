@@ -82,3 +82,18 @@ export function upsertCategories(db: DB, categories: MirroredCategory[]): number
   })
   return txn(categories)
 }
+
+/**
+ * Replaces the whole category mirror with the given authoritative set, atomically.
+ * Use after the backend was reset/re-imported: a plain upsert leaves orphan rows
+ * (old ids) behind, which surface as duplicates in the POS grid. The delete + insert
+ * run in one transaction so the mirror is never empty mid-way.
+ */
+export function replaceCategories(db: DB, categories: MirroredCategory[]): number {
+  const txn = db.transaction((items: MirroredCategory[]) => {
+    db.prepare('DELETE FROM categories').run()
+    upsertCategories(db, items)
+    return items.length
+  })
+  return txn(categories)
+}

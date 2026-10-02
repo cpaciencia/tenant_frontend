@@ -2,6 +2,7 @@ import type { DB } from '../db/connection'
 import {
   getProductsWatermark,
   upsertMirrorProducts,
+  replaceMirrorProducts,
   type MirroredProduct
 } from '../repositories/products'
 
@@ -32,9 +33,12 @@ function normalizeBase(baseUrl: string): string {
 export async function pullProducts(
   db: DB,
   baseUrl: string,
-  fetchFn: FetchLike = fetch
+  fetchFn: FetchLike = fetch,
+  opts: { full?: boolean } = {}
 ): Promise<number> {
-  const watermark = getProductsWatermark(db)
+  // `full` ignores the watermark and replaces the mirror (clears orphan rows after
+  // a backend reset/re-import, and avoids UNIQUE(barcode) clashes on changed ids).
+  const watermark = opts.full ? null : getProductsWatermark(db)
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/catalog/products${query}`, {
     method: 'GET',
@@ -55,5 +59,5 @@ export async function pullProducts(
     stock: p.stock ?? 0,
     updatedAt: p.updatedAt
   }))
-  return upsertMirrorProducts(db, mapped)
+  return opts.full ? replaceMirrorProducts(db, mapped) : upsertMirrorProducts(db, mapped)
 }

@@ -66,13 +66,20 @@ async function run(): Promise<void> {
       </div>
 
       <div class="imp-row">
-        <label>Productos <small>(idproducto, nombre, precio, idcategoria, stock, idcategoriapadre, borrable)</small></label>
+        <label
+          >Productos
+          <small
+            >(idproducto, nombre, precio, idcategoria, stock, idcategoriapadre, borrable)</small
+          ></label
+        >
         <input type="file" accept=".csv,.tsv,.txt" @change="pick('productos', $event)" />
         <span v-if="productosFile" class="imp-file">{{ productosFile.name }}</span>
       </div>
 
       <div class="imp-actions">
-        <span v-if="error" class="bo-error"><i class="pi pi-exclamation-triangle"></i> {{ error }}</span>
+        <span v-if="error" class="bo-error"
+          ><i class="pi pi-exclamation-triangle"></i> {{ error }}</span
+        >
         <Button
           label="Importar"
           icon="pi pi-database"
@@ -89,19 +96,28 @@ async function run(): Promise<void> {
       <div class="imp-grid">
         <div class="imp-stat">
           <span class="imp-stat__label">Cajas</span>
-          <span class="imp-stat__val">{{ summary.cajasCreated }} nuevas · {{ summary.cajasUpdated }} actualizadas</span>
+          <span class="imp-stat__val"
+            >{{ summary.cajasCreated }} nuevas · {{ summary.cajasUpdated }} actualizadas</span
+          >
         </div>
         <div class="imp-stat">
           <span class="imp-stat__label">Categorías</span>
-          <span class="imp-stat__val">{{ summary.categoriesCreated }} nuevas · {{ summary.categoriesUpdated }} actualizadas</span>
+          <span class="imp-stat__val"
+            >{{ summary.categoriesCreated }} nuevas ·
+            {{ summary.categoriesUpdated }} actualizadas</span
+          >
         </div>
         <div class="imp-stat">
           <span class="imp-stat__label">Productos</span>
-          <span class="imp-stat__val">{{ summary.productsCreated }} nuevos · {{ summary.productsUpdated }} actualizados</span>
+          <span class="imp-stat__val"
+            >{{ summary.productsCreated }} nuevos · {{ summary.productsUpdated }} actualizados</span
+          >
         </div>
         <div v-if="summary.productsSkipped > 0" class="imp-stat imp-stat--warn">
           <span class="imp-stat__label">Omitidos</span>
-          <span class="imp-stat__val">{{ summary.productsSkipped }} productos sin categoría conocida</span>
+          <span class="imp-stat__val"
+            >{{ summary.productsSkipped }} productos sin categoría conocida</span
+          >
         </div>
       </div>
       <p class="imp-note">
@@ -113,17 +129,19 @@ async function run(): Promise<void> {
     <div class="bo-card imp-card imp-help">
       <div class="imp-title">¿Cómo exporto desde MySQL?</div>
       <p>Genera dos ficheros con cabecera. Lo más simple por terminal (TSV):</p>
-      <pre>mysql -h 127.0.0.1 -P 3306 -u USUARIO -p --batch camping \
+      <pre>
+mysql -h 127.0.0.1 -P 3306 -u USUARIO -p --batch camping \
   -e "SELECT idcategoria, categoriapadre, borrable FROM categorias" \
   &gt; categorias.tsv
 
 mysql -h 127.0.0.1 -P 3306 -u USUARIO -p --batch camping \
   -e "SELECT idproducto, nombre, precio, idcategoria, stock, idcategoriapadre, borrable FROM productos" \
-  &gt; productos.tsv</pre>
+  &gt; productos.tsv</pre
+      >
       <p class="imp-note">
-        <code>--batch</code> produce TSV (separado por tabuladores), que evita problemas con las comas
-        de los nombres. Si prefieres CSV (p. ej. exportando desde DBeaver/MySQL Workbench), también
-        vale: el sistema detecta el separador. La columna <code>imagen</code> NO se importa.
+        <code>--batch</code> produce TSV (separado por tabuladores), que evita problemas con las
+        comas de los nombres. Si prefieres CSV (p. ej. exportando desde DBeaver/MySQL Workbench),
+        también vale: el sistema detecta el separador. La columna <code>imagen</code> NO se importa.
       </p>
     </div>
   </div>

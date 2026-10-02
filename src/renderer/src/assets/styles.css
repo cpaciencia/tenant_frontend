@@ -48,8 +48,7 @@
   --pos-shadow-cobrar: 0 6px 16px rgba(39, 174, 96, 0.3);
   --pos-shadow-modal: 0 30px 70px rgba(0, 0, 0, 0.4);
 
-  --font-ui:
-    'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-brand: 'Playfair Display', Georgia, serif;
 }
 

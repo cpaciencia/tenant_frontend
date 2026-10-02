@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../shared/types'
+import { sanitizeShifts } from '../../shared/shifts'
 
 const SETTINGS_KEY = 'app'
 
@@ -49,6 +50,13 @@ export function sanitizeSettings(patch: Partial<AppSettings>): Partial<AppSettin
   if (typeof patch.businessPhone === 'string') {
     clean.businessPhone = patch.businessPhone.trim()
   }
+  if (Number.isFinite(patch.cashFloatCents) && (patch.cashFloatCents as number) >= 0) {
+    clean.cashFloatCents = Math.round(patch.cashFloatCents as number)
+  }
+  if (patch.shifts !== undefined) {
+    const shifts = sanitizeShifts(patch.shifts)
+    if (shifts) clean.shifts = shifts
+  }
   return clean
 }
 
@@ -59,6 +67,25 @@ export function getSettings(db: DB): AppSettings {
     | undefined
   const stored = row ? parseStored(row.value) : {}
   return { ...DEFAULT_SETTINGS, ...envDefaults(), ...stored }
+}
+
+/**
+ * Make the backend-issued terminal id (from enrolment) the one tickets are
+ * numbered with. Enrolment is the authority: without this, a second terminal
+ * would keep the "T01" default and issue ticket numbers that collide with the
+ * first one's on the backend. The open caja moves along with the id (it is the
+ * same physical drawer); past sales and cierres keep the id they were issued with.
+ */
+export function adoptEnrolledTerminalId(db: DB, terminalId: string): AppSettings {
+  const current = getSettings(db)
+  const id = terminalId.trim()
+  if (!id || current.terminalId === id) return current
+  return db.transaction((): AppSettings => {
+    db.prepare(
+      `UPDATE cash_sessions SET terminal_id = ? WHERE terminal_id = ? AND status = 'open'`
+    ).run(id, current.terminalId)
+    return updateSettings(db, { terminalId: id })
+  })()
 }
 
 /**

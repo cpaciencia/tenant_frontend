@@ -6,16 +6,19 @@ import { initDatabase, closeDatabase } from './db'
 import { seedDevProducts } from './db/seed'
 import { registerEnrollmentHandlers, registerDbHandlers } from './ipc'
 import { CustomerDisplayManager } from './windows/customerDisplay'
-import { getSettings } from './repositories/settings'
+import { adoptEnrolledTerminalId, getSettings } from './repositories/settings'
+import { assignMissingShifts } from './services/cashSession'
 import { createSyncClient } from './sync/client'
 import { SyncWorker } from './sync/worker'
 import { pullUsers } from './sync/userPull'
 import { pullCategories } from './sync/categoryPull'
 import { pullProducts } from './sync/productPull'
 import { pullAccountingGroups } from './sync/accountingGroupPull'
+import { pullSuppliers } from './sync/supplierPull'
 import { createEnrollmentClient } from './enrollment/client'
 import { createSafeStorageCredentialStore } from './enrollment/safeStorageStore'
 import { EnrollmentService } from './enrollment/service'
+import type { IssuedCredentials } from './enrollment/client'
 import { createFileBootstrapConfig } from './bootstrap/config'
 import { installCsp } from './security/csp'
 
@@ -24,9 +27,12 @@ let runtimeStarted = false
 
 function createWindow(): void {
   // Create the browser window.
+  // A till runs full screen: open maximised, never smaller than the sale layout needs.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 700,
     show: false,
     title: 'Camping Parque Tropical - POS',
     autoHideMenuBar: true,
@@ -38,11 +44,13 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 
+  // Links that try to open a window go to the system browser — web links only.
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (/^https?:\/\//i.test(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
@@ -76,31 +84,42 @@ app.whenReady().then(async () => {
   // Bring up the DB-backed runtime: open the encrypted DB with the enrolment key,
   // migrate, wire DB handlers, customer display and background sync. Runs once —
   // either now (already enrolled) or right after enrolment completes.
-  async function startRuntime(dbKey: string): Promise<void> {
+  async function startRuntime(credentials: IssuedCredentials): Promise<void> {
     if (runtimeStarted) return
     runtimeStarted = true
-    const db = await initDatabase(dbKey)
+    const db = await initDatabase(credentials.dbKey)
+    const settings = adoptEnrolledTerminalId(db, credentials.terminalId)
+    assignMissingShifts(db, settings.terminalId, settings.shifts)
     if (is.dev) seedDevProducts(db)
-    registerDbHandlers(db, customerDisplay, () => bootstrap.getSyncApiUrl())
+    syncWorker = new SyncWorker(
+      db,
+      createSyncClient(() => bootstrap.getSyncApiUrl())
+    )
+    registerDbHandlers(db, customerDisplay, () => bootstrap.getSyncApiUrl(), syncWorker)
     customerDisplay.setEnabled(getSettings(db).customerDisplayEnabled)
-    syncWorker = new SyncWorker(db, createSyncClient(() => bootstrap.getSyncApiUrl()))
     syncWorker.start()
     // Refresh the local mirrors so the POS works offline with fresh data:
     // users (login hashes+permissions), categories and products (the catalog the
-    // till sells from). All best-effort — a network failure leaves the existing
-    // mirror in place.
+    // till sells from). `full: true` REPLACES each mirror with the backend's current
+    // set rather than upserting incrementally — this guarantees the mirror can never
+    // drift from the backend (e.g. orphan rows / duplicates after a backend reset or
+    // re-import where ids change). All best-effort: a failed fetch throws before the
+    // replace runs, so an offline launch leaves the existing mirror untouched.
     const baseUrl = bootstrap.getSyncApiUrl()
-    pullUsers(db, baseUrl).catch(() => {
+    pullUsers(db, baseUrl, undefined, { full: true }).catch(() => {
       /* offline or backend down — offline login still works from the mirror */
     })
-    pullAccountingGroups(db, baseUrl).catch(() => {
+    pullAccountingGroups(db, baseUrl, undefined, { full: true }).catch(() => {
       /* offline — the Z-report labels buckets from whatever the mirror holds */
     })
-    pullCategories(db, baseUrl).catch(() => {
+    pullCategories(db, baseUrl, undefined, { full: true }).catch(() => {
       /* offline — the grid uses whatever categories the mirror already holds */
     })
-    pullProducts(db, baseUrl).catch(() => {
+    pullProducts(db, baseUrl, undefined, { full: true }).catch(() => {
       /* offline — the grid uses whatever products the mirror already holds */
+    })
+    pullSuppliers(db, baseUrl).catch(() => {
+      /* offline — payments pick from the suppliers the mirror already holds */
     })
   }
 
@@ -116,7 +135,7 @@ app.whenReady().then(async () => {
         app.exit(0)
         return
       }
-      await startRuntime(credentials.dbKey)
+      await startRuntime(credentials)
     }
   )
   registerEnrollmentHandlers(enrollment)
@@ -124,7 +143,7 @@ app.whenReady().then(async () => {
   // If this terminal is already enrolled, unlock the DB before the window loads.
   const existing = credentialStore.load()
   if (existing) {
-    await startRuntime(existing.dbKey)
+    await startRuntime(existing)
   }
 
   // Set app user model id for windows

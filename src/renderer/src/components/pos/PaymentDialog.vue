@@ -6,6 +6,7 @@ import { clients, eur, initials } from '../../data/catalog'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../shared/types'
 import TicketReceipt from './TicketReceipt.vue'
 
+import MoneyInput from '../common/MoneyInput.vue'
 const store = usePosStore()
 const {
   payOpen,
@@ -18,6 +19,7 @@ const {
   ticket,
   change,
   cashOk,
+  isRefund,
   confirmEnabled,
   payResultLabel,
   payChange,
@@ -62,8 +64,12 @@ const methods = [
   { id: 'efectivo' as const, label: 'Efectivo', icon: 'pi-money-bill' },
   { id: 'tarjeta' as const, label: 'Tarjeta', icon: 'pi-credit-card' },
   { id: 'mixto' as const, label: 'Mixto', icon: 'pi-wallet' },
-  { id: 'fiado' as const, label: 'Fiado', icon: 'pi-book' }
+  { id: 'fiado' as const, label: 'A cuenta', icon: 'pi-book' }
 ]
+// On a refund only direct cash/card give-back make sense (no mixed/credit).
+const visibleMethods = computed(() =>
+  isRefund.value ? methods.filter((m) => m.id === 'efectivo' || m.id === 'tarjeta') : methods
+)
 
 /** Card part of a mixed payment (the rest of the total after the cash entered). */
 const mixedCard = computed(() => Math.max(0, total.value - (mixedCashEur.value || 0)))
@@ -86,7 +92,9 @@ const showSuccessChange = computed(() => payChange.value > 0)
       <!-- Success -->
       <div v-if="payDone" class="pay-done">
         <div class="pay-done__check"><i class="pi pi-check"></i></div>
-        <div class="pay-done__title">Cobro realizado</div>
+        <div class="pay-done__title">
+          {{ isRefund ? 'Devolución realizada' : 'Cobro realizado' }}
+        </div>
         <div class="pay-done__label">{{ payResultLabel }}</div>
         <div v-if="lastTicketNumber" class="pay-done__ticket">
           <i class="pi pi-receipt"></i> {{ lastTicketNumber }}
@@ -109,8 +117,10 @@ const showSuccessChange = computed(() => payChange.value > 0)
       <template v-else>
         <div class="pay-head">
           <div>
-            <div class="pay-head__label">TOTAL A COBRAR</div>
-            <div class="pay-head__total pos-money">{{ eur(total) }}</div>
+            <div class="pay-head__label">
+              {{ isRefund ? 'TOTAL A DEVOLVER' : 'TOTAL A COBRAR' }}
+            </div>
+            <div class="pay-head__total pos-money">{{ isRefund ? eur(-total) : eur(total) }}</div>
           </div>
           <button class="pay-head__close" @click="store.closePay()">
             <i class="pi pi-times"></i>
@@ -119,7 +129,7 @@ const showSuccessChange = computed(() => payChange.value > 0)
 
         <div class="pay-methods">
           <button
-            v-for="m in methods"
+            v-for="m in visibleMethods"
             :key="m.id"
             class="pay-method"
             :class="{ 'pay-method--active': payMethod === m.id }"
@@ -130,8 +140,22 @@ const showSuccessChange = computed(() => payChange.value > 0)
         </div>
 
         <div class="pay-body">
+          <!-- Refund (negative total: hand back a deposit) -->
+          <div v-if="isRefund" class="pay-refund">
+            <div class="pay-refund__icon"><i class="pi pi-replay"></i></div>
+            <div class="pay-refund__title">Devolver al cliente</div>
+            <div class="pay-refund__amount pos-money">{{ eur(-total) }}</div>
+            <div class="pay-refund__hint">
+              {{
+                payMethod === 'tarjeta'
+                  ? 'Reintegro a la tarjeta del cliente.'
+                  : 'Entrega el importe en efectivo del cajón.'
+              }}
+            </div>
+          </div>
+
           <!-- Cash -->
-          <div v-if="payMethod === 'efectivo'">
+          <div v-else-if="payMethod === 'efectivo'">
             <div class="pay-cash-grid">
               <button
                 v-for="o in cashOptions"
@@ -173,21 +197,13 @@ const showSuccessChange = computed(() => payChange.value > 0)
           <div v-else-if="payMethod === 'mixto'" class="pay-mixed">
             <div class="pay-mixed__lead">Reparte el total entre efectivo y tarjeta:</div>
             <label class="pay-mixed__label">Pagado en efectivo</label>
-            <InputNumber
-              v-model="mixedCashEur"
-              :min="0"
-              :max="total"
-              mode="currency"
-              currency="EUR"
-              locale="es-ES"
-              fluid
-            />
+            <MoneyInput v-model="mixedCashEur" :min="0" :max="total" fluid />
             <div class="pay-mixed__rest">
               Resto con tarjeta: <strong class="pos-money">{{ eur(mixedCard) }}</strong>
             </div>
           </div>
 
-          <!-- Fiado -->
+          <!-- A cuenta (credit) -->
           <div v-else-if="payMethod === 'fiado'">
             <div class="pay-fiado__lead">Anotar el importe a la cuenta de:</div>
             <div class="pay-fiado__list">
@@ -216,7 +232,9 @@ const showSuccessChange = computed(() => payChange.value > 0)
           </div>
         </div>
 
-        <div v-if="payError" class="pay-error"><i class="pi pi-exclamation-triangle"></i> {{ payError }}</div>
+        <div v-if="payError" class="pay-error">
+          <i class="pi pi-exclamation-triangle"></i> {{ payError }}
+        </div>
 
         <div class="pay-foot">
           <button class="pay-cancel" :disabled="paying" @click="store.closePay()">Cancelar</button>
@@ -225,7 +243,15 @@ const showSuccessChange = computed(() => payChange.value > 0)
             :disabled="!confirmEnabled || paying"
             @click="store.confirmPay()"
           >
-            {{ paying ? 'COBRANDO…' : 'CONFIRMAR COBRO' }}
+            {{
+              paying
+                ? isRefund
+                  ? 'DEVOLVIENDO…'
+                  : 'COBRANDO…'
+                : isRefund
+                  ? 'CONFIRMAR DEVOLUCIÓN'
+                  : 'CONFIRMAR COBRO'
+            }}
           </button>
         </div>
       </template>
@@ -246,7 +272,9 @@ const showSuccessChange = computed(() => payChange.value > 0)
       </div>
       <div class="receipt-print__actions">
         <button class="pay-cancel" @click="showReceipt = false">Cerrar</button>
-        <button class="pay-confirm" @click="printReceipt()"><i class="pi pi-print"></i> Imprimir</button>
+        <button class="pay-confirm" @click="printReceipt()">
+          <i class="pi pi-print"></i> Imprimir
+        </button>
       </div>
     </div>
   </div>
@@ -275,6 +303,42 @@ const showSuccessChange = computed(() => payChange.value > 0)
   font-size: 15px;
   font-weight: 700;
   color: var(--pos-text-2);
+}
+.pay-refund {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px 0 10px;
+}
+.pay-refund__icon {
+  width: 78px;
+  height: 78px;
+  border-radius: 18px;
+  background: var(--pos-warn-bg);
+  color: var(--pos-warn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+}
+.pay-refund__title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--pos-text-2);
+  margin-top: 16px;
+  letter-spacing: 0.03em;
+}
+.pay-refund__amount {
+  font-size: 40px;
+  font-weight: 900;
+  color: var(--pos-warn);
+  margin-top: 4px;
+}
+.pay-refund__hint {
+  font-size: 14px;
+  color: var(--pos-text-3);
+  margin-top: 8px;
 }
 .pay-error {
   display: flex;

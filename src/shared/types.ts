@@ -4,6 +4,8 @@
  * of any Node or Electron imports so it's safe to bundle into the renderer.
  */
 
+import { DEFAULT_SHIFTS, type ShiftDefinition } from './shifts'
+
 export interface Product {
   id: string
   barcode: string | null
@@ -17,28 +19,13 @@ export interface Product {
   stock: number
 }
 
-/** One row of a Z-report: the takings of a single accounting group (caja). */
+/** One row of a cierre: the takings of a single accounting group (caja). */
 export interface ZBreakdownRow {
   /** Null for lines whose product had no caja resolved at sale time. */
   accountingGroupId: string | null
   code: string
   name: string
   totalCents: number
-}
-
-/** Live preview of what the next cash-up (Z) would total, by caja. */
-export interface ZReport {
-  salesCount: number
-  totalCents: number
-  breakdown: ZBreakdownRow[]
-}
-
-/** A persisted Z closure (the sealed cash-up record). */
-export interface ZClosure extends ZReport {
-  id: string
-  terminalId: string
-  zNumber: number
-  closedAt: string
 }
 
 /** A category as mirrored locally for the POS (projection of the backend tree). */
@@ -52,33 +39,369 @@ export interface Category {
   active: boolean
 }
 
+/**
+ * How a line was rung without a known product: `quick` = the "Producto" (no barcode) button
+ * (just a price); `not_found` = a scanned barcode that isn't in the catalog. Both
+ * become pending items to be completed (or dismissed) later.
+ */
+export type ManualItemKind = 'quick' | 'not_found'
+
+/** Extra data of a line rung without a catalog product. */
+export interface ManualItemInput {
+  kind: ManualItemKind
+  /** The barcode that was scanned but not found (not_found only). */
+  barcode: string | null
+  /** Optional data the cashier already typed (name, category). */
+  name: string | null
+  categoryId: string | null
+}
+
 export interface CartItemInput {
-  productId: string
+  /** Catalog product; null only for a manual line (see `manual`). */
+  productId: string | null
+  /** Name shown on the ticket, snapshotted for reports. */
+  name: string
   quantity: number
   unitPriceCents: number
   /**
-   * Accounting group (caja) this line rolls up into, snapshotted at sale time so
-   * the Z-report stays stable if the product is later reclassified. Null when the
-   * product's category has no caja resolved (shouldn't happen in normal flow).
+   * Accounting group this line rolls up into, snapshotted at sale time so the
+   * cierre stays stable if the product is later reclassified. Null when the
+   * product's category has no group resolved (shouldn't happen in normal flow).
    */
   accountingGroupId: string | null
+  /** Present when the line was rung by price without a catalog product. */
+  manual?: ManualItemInput | null
+}
+
+/**
+ * A line sold without a catalog product, waiting for someone to complete it
+ * (create the real product — then the sale is linked to it) or dismiss it.
+ */
+export interface PendingItem {
+  id: string
+  terminalId: string
+  saleId: string
+  ticketNumber: string
+  kind: ManualItemKind
+  barcode: string | null
+  name: string | null
+  categoryId: string | null
+  priceCents: number
+  quantity: number
+  createdAt: string
+  createdByUserId: string | null
+  createdByName: string
+  status: 'pending' | 'completed' | 'dismissed'
+  productId: string | null
+  resolvedAt: string | null
+  resolvedByUserId: string | null
+  resolvedByName: string | null
+}
+
+/** Who did something on the till (recorded on pending items and audit events). */
+export interface Actor {
+  userId: string | null
+  name: string
+}
+
+export interface ResolvePendingRequest {
+  id: string
+  /** The product created for it (completion); omitted when dismissing. */
+  productId?: string
+  actor: Actor
+}
+
+/**
+ * Audit event types the renderer may report (UI actions the Main process can't
+ * see). Everything else — sales, cajas, logins, pending items — is recorded by
+ * Main itself.
+ */
+export const RENDERER_AUDIT_TYPES = [
+  'auth.logout',
+  'ticket.line_added',
+  'payment.opened',
+  'ticket.line_removed',
+  'ticket.qty_decreased',
+  'ticket.cleared',
+  'payment.cancelled',
+  'scan.not_found',
+  'product.manual_added'
+] as const
+export type RendererAuditType = (typeof RENDERER_AUDIT_TYPES)[number]
+
+export interface AuditEventInput {
+  type: RendererAuditType
+  actor: Actor
+  /** Small JSON-able detail (ticket total, line name, barcode…). */
+  data: Record<string, unknown>
 }
 
 /**
  * How a sale was paid. The three buckets sum to the sale total: cash + card go
- * into the till; credit is "a cuenta" (fiado) — a debt of {@link clientId}, not
- * money taken. In H1 credit is always 0 (fiado lands in a later phase).
+ * into the till; credit is "a cuenta" (fiado) — a debt of the client, not money
+ * taken. `clientName` is snapshotted so the cierre can say who was credited.
  */
 export interface SalePayment {
   cashCents: number
   cardCents: number
   creditCents: number
+  /** Backend client id (UUID) once real clients exist; null for ad-hoc/sample clients. */
   clientId: string | null
+  clientName: string | null
+}
+
+/** A ticket line as kept in the till while the ticket is open (or parked). */
+export interface OpenTicketLine {
+  key: string
+  id: string
+  name: string
+  price: number
+  qty: number
+  manual?: ManualItemInput
+}
+
+/** A ticket set aside unpaid to serve someone else, to be resumed later. */
+export interface ParkedTicket {
+  id: string
+  /** Identity of the ticket being built (same across park/resume), for the audit trail. */
+  draftId: string | null
+  parkedAt: string
+  parkedByUserId: string | null
+  parkedByName: string
+  lines: OpenTicketLine[]
+  totalCents: number
+}
+
+export interface ParkTicketRequest {
+  draftId: string | null
+  lines: OpenTicketLine[]
+  actor: Actor
+}
+
+export interface ParkedTicketActionRequest {
+  id: string
+  actor: Actor
 }
 
 export interface CreateSaleRequest {
+  /** Identity of the ticket being built, to link the sale to its audit trail. */
+  draftId?: string | null
   items: CartItemInput[]
   payment: SalePayment
+  /** The open cash session (caja) this sale belongs to. Required: no open caja, no sale. */
+  cashSessionId: string
+  /** The logged-in user ringing the sale (several people may sell into one caja). */
+  sellerUserId: string | null
+  sellerName: string
+}
+
+/** Cash/card/credit split totalled across a set of sales. */
+export interface Tenders {
+  cashCents: number
+  cardCents: number
+  creditCents: number
+}
+
+/** A credit ("fiado") sale inside a cierre: who owes what. */
+export interface FiadoEntry {
+  saleId: string
+  ticketNumber: string
+  clientId: string | null
+  clientName: string
+  amountCents: number
+  createdAt: string
+}
+
+/**
+ * Cash moved in/out of the drawer that is not a sale:
+ * - `supplier_payment`: paying a supplier from the drawer.
+ * - `cash_in`: money put INTO the drawer from outside (e.g. to pay a supplier).
+ * - `cash_out`: money taken out of the drawer (e.g. giving back what was put in).
+ */
+export type CashMovementKind = 'supplier_payment' | 'cash_in' | 'cash_out'
+
+export interface CashMovement {
+  id: string
+  cashSessionId: string
+  terminalId: string
+  kind: CashMovementKind
+  amountCents: number
+  supplierId: string | null
+  supplier: string | null
+  document: string | null
+  note: string | null
+  userId: string | null
+  userName: string
+  createdAt: string
+  /** Supplier payments only: 'pending' until the server stores its invoice. */
+  invoiceStatus: InvoiceStatus | null
+  invoiceFileName: string | null
+  invoiceUploadedAt: string | null
+}
+
+export type InvoiceStatus = 'pending' | 'uploaded'
+
+export interface Supplier {
+  id: string
+  name: string
+}
+
+/** Mark a supplier payment's invoice as stored by the server (after the upload succeeded). */
+export interface MarkInvoiceUploadedRequest {
+  cashMovementId: string
+  fileName: string
+  /** 'file' = uploaded from the till, 'qr' = from a phone via the QR link. */
+  via: 'file' | 'qr'
+  actor: Actor
+}
+
+export interface RecordCashMovementRequest {
+  kind: CashMovementKind
+  amountCents: number
+  /** Picked from the list; when absent the supplier is found/created by name. */
+  supplierId?: string | null
+  supplier?: string | null
+  document?: string | null
+  note?: string | null
+  actor: Actor
+}
+
+/** Totals of a caja's cash movements and how much put-in money is still to be taken out. */
+export interface CashMovementsSummary {
+  cashInCents: number
+  cashOutCents: number
+  supplierPaymentsCents: number
+  /** cash_in − cash_out: money put in that still has to be taken out. */
+  cashInPendingCents: number
+  /** Supplier payments whose invoice is not on the server yet (block the cierre). */
+  invoicesPending: number
+  list: CashMovement[]
+}
+
+/** A correction of an open caja's drawer float: who changed it, when, from → to. */
+export interface FloatAdjustment {
+  at: string
+  userId: string | null
+  userName: string
+  fromCents: number
+  toCents: number
+}
+
+/** Takings rung by one user inside a caja (several people can sell into one caja). */
+export interface SellerTotal {
+  userId: string | null
+  name: string
+  salesCount: number
+  totalCents: number
+}
+
+/**
+ * A till session ("caja"). It belongs to a SHIFT (turno) on a business date — not
+ * to a cashier: there is exactly one open caja per terminal (one physical drawer),
+ * everybody on duty sells into it with their own user, and each sale records who
+ * rang it. Closing it (arqueo) immediately opens the next shift's caja with the
+ * float left in the drawer, so selling never stops. That handover caja has no
+ * responsible until someone logs in and accepts it (or, failing that, whoever
+ * closes it becomes responsible).
+ */
+export interface CashSession {
+  id: string
+  terminalId: string
+  /** Shift this caja serves; null for cajas opened before shifts existed. */
+  shiftId: string | null
+  shiftName: string | null
+  /** Local business date (YYYY-MM-DD) of the shift. */
+  businessDate: string | null
+  /** Who opened the caja (for a handover caja: whoever closed the previous one). */
+  cashierUserId: string | null
+  cashierName: string
+  openedAt: string
+  openingFloatCents: number
+  status: 'open' | 'closed'
+  closedAt: string | null
+  /** Who answers for this caja; null while a handover caja awaits acceptance. */
+  responsibleUserId: string | null
+  responsibleName: string | null
+  acceptedAt: string | null
+  /** Who did the arqueo and closed it — null while open. */
+  closedByUserId: string | null
+  closedByName: string | null
+  /** Arqueo fields — null while the caja is still open. */
+  expectedCashCents: number | null
+  countedCashCents: number | null
+  differenceCents: number | null
+  closingFloatCents: number | null
+  /** Fiscal per-terminal sequential cierre number, allocated at close (null while open). */
+  zNumber: number | null
+  salesCount: number
+  totalCents: number
+  tenders: Tenders
+  breakdown: ZBreakdownRow[]
+  fiados: FiadoEntry[]
+  sellers: SellerTotal[]
+  /** Float corrections made when the caja was accepted (oldest first). */
+  floatAdjustments: FloatAdjustment[]
+  /** Supplier payments and cash in/out recorded in this caja (sealed at close). */
+  cashMovements: CashMovement[]
+}
+
+export interface OpenSessionRequest {
+  cashierUserId: string | null
+  cashierName: string
+  openingFloatCents: number
+  /** Shift to open; defaults to the shift running now. */
+  shiftId?: string | null
+}
+
+export interface CloseSessionRequest {
+  sessionId: string
+  countedCashCents: number
+  closingFloatCents: number
+  closedByUserId: string | null
+  closedByName: string
+  /** Money taken out at close (what was put in), recorded in the same step (optional). */
+  cashOutCents?: number | null
+}
+
+export interface AcceptSessionRequest {
+  sessionId: string
+  userId: string | null
+  userName: string
+  /** The float the arriving cashier counted, when it differs from the one left. */
+  openingFloatCents?: number | null
+}
+
+/** A cierre seals one caja and opens the next shift's caja in the same step. */
+export interface CloseSessionResult {
+  closed: CashSession
+  next: CashSession
+}
+
+/**
+ * Live arqueo of an open caja before sealing it: totals so far + expected cash
+ * (opening float + net cash taken). The cashier counts the drawer and the close
+ * records counted vs expected → difference.
+ */
+export interface SessionArqueo {
+  sessionId: string
+  shiftName: string | null
+  businessDate: string | null
+  cashierName: string
+  openedAt: string
+  openingFloatCents: number
+  salesCount: number
+  totalCents: number
+  tenders: Tenders
+  breakdown: ZBreakdownRow[]
+  fiados: FiadoEntry[]
+  sellers: SellerTotal[]
+  /**
+   * openingFloatCents + cash sales + money put in − supplier payments − money
+   * taken out (cash refunds are already negative).
+   */
+  expectedCashCents: number
+  /** Supplier payments and cash in/out of the caja. */
+  movements: CashMovementsSummary
 }
 
 export interface Sale {
@@ -125,6 +448,10 @@ export interface AppSettings {
   businessAddress: string
   businessTaxId: string
   businessPhone: string
+  /** Default cash float ("fondo de caja") a caja opens with and leaves on close, in cents. */
+  cashFloatCents: number
+  /** Shifts (turnos) a caja can belong to, e.g. Mañana 08–16 and Tarde 16–00. */
+  shifts: ShiftDefinition[]
 }
 
 /**
@@ -142,7 +469,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   businessName: 'Camping Parque Tropical',
   businessAddress: '',
   businessTaxId: '',
-  businessPhone: ''
+  businessPhone: '',
+  cashFloatCents: 15000,
+  shifts: DEFAULT_SHIFTS
 }
 
 /**
@@ -193,6 +522,38 @@ export interface AuthSessionResult {
   user: AuthSessionUser
   permissions: string[]
   token?: string | null
+}
+
+/** Counts of the local outbound sync queue (sales + cierres de caja). */
+export interface SyncStatus {
+  /** Rows not yet acknowledged by the backend. */
+  pending: number
+  /** All rows ever enqueued (synced + pending). */
+  total: number
+}
+
+/** Outcome of exporting a document to PDF (false when the user cancelled the save). */
+export interface PdfExportResult {
+  saved: boolean
+  path?: string
+}
+
+/** Result of a forced re-sync: how many rows were re-queued and what's left pending. */
+export interface SyncResyncResult {
+  requeued: number
+  pending: number
+}
+
+/**
+ * Result of a clean catalog refresh (full re-pull that replaces each local mirror).
+ * A count is the number of rows pulled; null means that entity's pull failed (e.g.
+ * the backend was unreachable) and its mirror was left untouched.
+ */
+export interface CatalogRefreshResult {
+  accountingGroups: number | null
+  categories: number | null
+  products: number | null
+  users: number | null
 }
 
 /**

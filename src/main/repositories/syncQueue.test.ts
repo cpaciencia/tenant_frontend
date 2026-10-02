@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createDatabase, type DB } from '../db/connection'
 import { runMigrations } from '../db/migrator'
-import { getPending, markSynced, markFailed, countPending } from './syncQueue'
+import {
+  getPending,
+  markSynced,
+  markFailed,
+  countPending,
+  countTotals,
+  requeueAll
+} from './syncQueue'
 
 let db: DB
 
@@ -49,5 +56,25 @@ describe('syncQueue repository', () => {
     }
     expect(row.attempts).toBe(1)
     expect(row.last_error).toBe('boom')
+  })
+
+  it('countTotals reports pending vs total across synced and unsynced rows', () => {
+    enqueue('a', '2026-01-01T00:00:00.000Z')
+    enqueue('b', '2026-01-02T00:00:00.000Z')
+    markSynced(db, 'a')
+    expect(countTotals(db)).toEqual({ total: 2, pending: 1 })
+  })
+
+  it('requeueAll re-arms every row (synced -> pending, attempts reset) for a full re-push', () => {
+    enqueue('a', '2026-01-01T00:00:00.000Z')
+    enqueue('parked', '2026-01-02T00:00:00.000Z', 5)
+    markSynced(db, 'a')
+    expect(getPending(db, 10, 5)).toHaveLength(0) // 'a' synced, 'parked' exhausted
+
+    const requeued = requeueAll(db)
+    expect(requeued).toBe(2)
+    // Both rows are pending again and the parked one is no longer exhausted.
+    expect(getPending(db, 10, 5).map((p) => p.id)).toEqual(['a', 'parked'])
+    expect(countTotals(db)).toEqual({ total: 2, pending: 2 })
   })
 })

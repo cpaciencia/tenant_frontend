@@ -26,4 +26,8 @@ describe('buildCsp', () => {
     expect(csp).toContain("style-src 'self' 'unsafe-inline'")
     expect(csp).toContain("img-src 'self' data:")
   })
+
+  it('allows the bundled data: fonts (Vite inlines them in the production build)', () => {
+    expect(buildCsp('http://localhost:7071')).toContain("font-src 'self' data:")
+  })
 })

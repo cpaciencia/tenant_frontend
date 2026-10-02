@@ -11,7 +11,7 @@ export interface BootstrapConfig {
   setSyncApiUrl: (url: string) => void
 }
 
-const DEFAULT_SYNC_API_URL = 'http://localhost:8080'
+const DEFAULT_SYNC_API_URL = 'http://localhost:7071'
 
 function normalize(url: string): string {
   return url.trim().replace(/\/+$/, '')

@@ -11,7 +11,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   const loaded = ref(false)
   const enrolled = ref(false)
   const terminalId = ref('T01')
-  const syncApiUrl = ref('http://localhost:8080')
+  const syncApiUrl = ref('http://localhost:7071')
 
   function apply(state: EnrollmentState): void {
     enrolled.value = state.enrolled

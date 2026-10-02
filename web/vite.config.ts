@@ -30,7 +30,8 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5174
+    port: 5050,
+    strictPort: true
   },
   build: {
     outDir: r('../out-web'),

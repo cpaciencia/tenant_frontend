@@ -1,58 +1,81 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
-  listClosures,
   getCurrentTill,
-  getClosure,
-  type ClosureView,
-  type CurrentTill,
-  type ClosureDetail
+  listCashSessions,
+  listOpenCashSessions,
+  type CashSessionView
 } from '../../services/admin'
-import type { ZClosure } from '../../../../shared/types'
-import { useCan } from '../../composables/useCan'
+import { cierreShiftLabel, type ReportBusiness } from '../../reports/cierreReport'
+import { exportCierrePdf, loadReportBusiness } from '../../reports/exportCierre'
+import CierreReportFrame from '../cierre/CierreReportFrame.vue'
 
 /**
- * Cash-up screen. READS from the backend (works in web + desktop): the open till
- * (current) and the closure history, with a per-closure detail (breakdown + its
- * tickets). The CLOSE action stays local to the terminal (IPC) — only shown on the
- * desktop app, which is the source of truth for sealing the till.
+ * Cajas (read-only, web + desktop). A caja belongs to a shift (turno) on a
+ * terminal. Closing happens in the POS; this screen only reports.
+ *
+ * Left: the cajas OPEN right now, one per terminal, as they stand — figures are
+ * computed live by the backend from the sales already synced, and the screen
+ * refreshes itself. Right: the history of cierres. "Ver" opens the same document
+ * the POS shows (an open caja shows its state "as of now"), exportable to PDF.
  */
-const { can } = useCan()
+const REFRESH_MS = 30_000
 
-const canClose = typeof window.api?.zReport?.close === 'function'
-
-const current = ref<CurrentTill>({
-  totalCents: 0,
-  salesCount: 0,
-  tenders: { cashCents: 0, cardCents: 0, creditCents: 0 },
-  breakdown: []
-})
-const closures = ref<ClosureView[]>([])
+const openCajas = ref<CashSessionView[]>([])
+const sessions = ref<CashSessionView[]>([])
+/** Sales the backend has whose caja it doesn't know yet (till not fully synced). */
+const unsyncedSales = ref(0)
 const loading = ref(false)
+const updatedAt = ref<Date | null>(null)
 const error = ref('')
-const closing = ref(false)
-const lastClosed = ref<ZClosure | null>(null)
-
-const detailOpen = ref(false)
-const detail = ref<ClosureDetail | null>(null)
-const detailLoading = ref(false)
+const detail = ref<CashSessionView | null>(null)
+const business = ref<ReportBusiness>({ name: '' })
+const exporting = ref(false)
 
 const palette = ['#27ae60', '#2196F3', '#FF9800', '#9C27B0', '#00BCD4', '#ec407a', '#8d6e63']
 
-function eur(cents: number): string {
-  return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+function eur(cents: number | null): string {
+  return ((cents ?? 0) / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 }
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+function fmtDate(iso: string | null): string {
+  return iso
+    ? new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+    : '—'
 }
-const pct = (cents: number): string =>
-  current.value.totalCents > 0 ? `${(cents / current.value.totalCents) * 100}%` : '0%'
+function fmtTime(d: Date | null): string {
+  return d ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''
+}
+const pct = (cents: number, total: number): string =>
+  total > 0 ? `${Math.max(0, (cents / total) * 100)}%` : '0%'
+
+const openTotalCents = computed(() => openCajas.value.reduce((a, c) => a + c.totalCents, 0))
+
+const detailTitle = computed(() => {
+  const d = detail.value
+  if (!d) return 'Detalle'
+  const head =
+    d.status === 'open' ? 'Caja abierta' : `Cierre ${d.zNumber != null ? 'Z ' + d.zNumber : ''}`
+  return `${head} · ${d.terminalId} · ${cierreShiftLabel(d)}`
+})
 
 async function refresh(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    ;[current.value, closures.value] = await Promise.all([getCurrentTill(), listClosures()])
+    const [open, all, till] = await Promise.all([
+      listOpenCashSessions(),
+      listCashSessions(),
+      getCurrentTill()
+    ])
+    openCajas.value = open
+    sessions.value = all.filter((s) => s.status === 'closed')
+    const known = open.reduce((a, c) => a + c.salesCount, 0)
+    unsyncedSales.value = Math.max(0, till.salesCount - known)
+    updatedAt.value = new Date()
+    // Keep an open detail in sync with the refreshed figures.
+    if (detail.value?.status === 'open') {
+      detail.value = open.find((c) => c.id === detail.value?.id) ?? detail.value
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'No se pudo cargar la información de caja'
   } finally {
@@ -60,189 +83,218 @@ async function refresh(): Promise<void> {
   }
 }
 
-async function closeZ(): Promise<void> {
-  if (closing.value || current.value.salesCount === 0) return
-  if (!confirm(`¿Cerrar la caja? Se sellarán las ventas pendientes del terminal.`)) return
-  closing.value = true
-  error.value = ''
+async function savePdf(): Promise<void> {
+  if (!detail.value || exporting.value) return
+  exporting.value = true
   try {
-    lastClosed.value = await window.api.zReport.close()
-    await refresh()
+    await exportCierrePdf(detail.value, business.value)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'No se pudo cerrar la caja'
+    error.value = e instanceof Error ? e.message : 'No se pudo exportar el PDF'
   } finally {
-    closing.value = false
+    exporting.value = false
   }
 }
 
-async function openDetail(c: ClosureView): Promise<void> {
-  detailOpen.value = true
-  detail.value = null
-  detailLoading.value = true
-  try {
-    detail.value = await getClosure(c.id)
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'No se pudo cargar el detalle'
-    detailOpen.value = false
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-onMounted(refresh)
+let timer: ReturnType<typeof setInterval> | null = null
+onMounted(async () => {
+  business.value = await loadReportBusiness()
+  await refresh()
+  timer = setInterval(refresh, REFRESH_MS)
+})
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
 </script>
 
 <template>
   <div class="za">
-    <div v-if="lastClosed" class="bo-card za-done">
-      <i class="pi pi-check-circle"></i>
-      <div>
-        <div class="za-done__title">Cierre Z nº {{ lastClosed.zNumber }} realizado</div>
-        <div class="za-done__sub">
-          {{ fmtDate(lastClosed.closedAt) }} · {{ lastClosed.salesCount }} ventas ·
-          {{ eur(lastClosed.totalCents) }} — se sincronizará al backend.
-        </div>
-      </div>
-    </div>
-
     <div class="za-cols">
-      <!-- Caja actual -->
+      <!-- Cajas abiertas ahora (live) -->
       <div class="bo-card za-main">
         <div class="za-head">
           <div>
-            <div class="za-head__label">CAJA ACTUAL (PENDIENTE DE CIERRE)</div>
-            <div class="za-head__total pos-money">{{ eur(current.totalCents) }}</div>
-            <div class="za-head__sub">{{ current.salesCount }} ventas</div>
+            <div class="za-head__label">CAJAS ABIERTAS AHORA</div>
+            <div class="za-head__total pos-money">{{ eur(openTotalCents) }}</div>
+            <div class="za-head__sub">
+              {{ openCajas.length }} {{ openCajas.length === 1 ? 'caja' : 'cajas' }}
+              <template v-if="updatedAt"> · actualizado {{ fmtTime(updatedAt) }}</template>
+            </div>
           </div>
-          <Button
-            v-if="canClose && can('register:close')"
-            :label="closing ? 'Cerrando…' : 'Cerrar caja (Z)'"
-            icon="pi pi-file-check"
-            :disabled="closing || current.salesCount === 0"
-            @click="closeZ"
-          />
+          <div class="za-head__actions">
+            <span class="za-hint">Se actualiza solo · el cierre se hace en el TPV</span>
+            <Button
+              icon="pi pi-refresh"
+              text
+              :loading="loading"
+              aria-label="Actualizar"
+              @click="refresh"
+            />
+          </div>
         </div>
         <span v-if="error" class="bo-error">{{ error }}</span>
-
-        <div class="za-title">Cobrado por método</div>
-        <div class="za-tenders">
-          <div class="za-tender">
-            <i class="pi pi-money-bill"></i>
-            <span>Efectivo</span>
-            <strong class="pos-money">{{ eur(current.tenders.cashCents) }}</strong>
-          </div>
-          <div class="za-tender">
-            <i class="pi pi-credit-card"></i>
-            <span>Tarjeta</span>
-            <strong class="pos-money">{{ eur(current.tenders.cardCents) }}</strong>
-          </div>
-          <div class="za-tender za-tender--credit">
-            <i class="pi pi-book"></i>
-            <span>A cuenta (fiado)</span>
-            <strong class="pos-money">{{ eur(current.tenders.creditCents) }}</strong>
-          </div>
+        <div v-if="unsyncedSales > 0" class="za-note">
+          <i class="pi pi-info-circle"></i>
+          {{ unsyncedSales }} ventas de una caja que el TPV aún no ha enviado. Aparecerá aquí en
+          cuanto la abra, acepte o cierre.
         </div>
 
-        <div class="za-title">Desglose por caja por categoría</div>
-        <div v-if="current.breakdown.length === 0" class="za-empty">Sin ventas pendientes.</div>
-        <div
-          v-for="(b, i) in current.breakdown"
-          :key="b.accountingGroupId ?? '__none__'"
-          class="za-bd"
-        >
-          <div class="za-bd__row">
-            <span class="za-bd__name"
-              ><span class="za-bd__code">{{ b.code }}</span> {{ b.name }}</span
-            >
-            <span class="pos-money za-bd__amount">{{ eur(b.totalCents) }}</span>
+        <div v-if="openCajas.length === 0 && !loading" class="za-empty">
+          No hay ninguna caja abierta.
+        </div>
+
+        <div v-for="caja in openCajas" :key="caja.id" class="za-caja">
+          <div class="za-caja__head">
+            <div>
+              <div class="za-caja__title">
+                <i class="pi pi-desktop"></i> {{ caja.terminalId }} · {{ cierreShiftLabel(caja) }}
+              </div>
+              <div class="za-caja__sub">
+                Abierta {{ fmtDate(caja.openedAt) }} por {{ caja.cashierName }}
+              </div>
+            </div>
+            <span v-if="caja.responsibleName" class="za-badge">
+              <i class="pi pi-user"></i> {{ caja.responsibleName }}
+            </span>
+            <span v-else class="za-badge za-badge--warn">
+              <i class="pi pi-inbox"></i> Sin responsable
+            </span>
           </div>
-          <div class="za-bd__bar">
-            <div
-              class="za-bd__fill"
-              :style="{ width: pct(b.totalCents), background: palette[i % palette.length] }"
-            ></div>
+
+          <div class="za-caja__kpis">
+            <div class="za-kpi">
+              <span>Vendido ({{ caja.salesCount }})</span>
+              <b class="pos-money">{{ eur(caja.totalCents) }}</b>
+            </div>
+            <div class="za-kpi">
+              <span>Efectivo en cajón</span>
+              <b class="pos-money">{{ eur(caja.expectedCashCents) }}</b>
+              <small
+                >fondo {{ eur(caja.openingFloatCents) }} + {{ eur(caja.tenders.cashCents) }}</small
+              >
+            </div>
+          </div>
+
+          <div class="za-tenders">
+            <div class="za-tender">
+              <i class="pi pi-money-bill"></i>
+              <span>Efectivo</span>
+              <strong class="pos-money">{{ eur(caja.tenders.cashCents) }}</strong>
+            </div>
+            <div class="za-tender">
+              <i class="pi pi-credit-card"></i>
+              <span>Tarjeta</span>
+              <strong class="pos-money">{{ eur(caja.tenders.cardCents) }}</strong>
+            </div>
+            <div class="za-tender za-tender--credit">
+              <i class="pi pi-book"></i>
+              <span>A cuenta ({{ caja.fiados.length }})</span>
+              <strong class="pos-money">{{ eur(caja.tenders.creditCents) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="caja.breakdown.length" class="za-title">Por grupo contable</div>
+          <div
+            v-for="(b, i) in caja.breakdown"
+            :key="b.accountingGroupId ?? '__none__'"
+            class="za-bd"
+          >
+            <div class="za-bd__row">
+              <span class="za-bd__name"
+                ><span class="za-bd__code">{{ b.code }}</span> {{ b.name }}</span
+              >
+              <span class="pos-money za-bd__amount">{{ eur(b.totalCents) }}</span>
+            </div>
+            <div class="za-bd__bar">
+              <div
+                class="za-bd__fill"
+                :style="{
+                  width: pct(b.totalCents, caja.totalCents),
+                  background: palette[i % palette.length]
+                }"
+              ></div>
+            </div>
+          </div>
+
+          <div v-if="caja.sellers.length" class="za-sellers">
+            <span v-for="v in caja.sellers" :key="v.userId ?? v.name" class="za-seller">
+              {{ v.name }} · {{ v.salesCount }} · <b class="pos-money">{{ eur(v.totalCents) }}</b>
+            </span>
+          </div>
+
+          <div class="za-caja__foot">
+            <Button label="Ver detalle" icon="pi pi-eye" text size="small" @click="detail = caja" />
           </div>
         </div>
       </div>
 
-      <!-- Cierres anteriores -->
+      <!-- Cierres anteriores (uno por turno) -->
       <div class="bo-card za-hist">
         <div class="za-title">Cierres anteriores</div>
-        <DataTable :value="closures" :loading="loading" data-key="id" paginator :rows="8">
+        <DataTable :value="sessions" :loading="loading" data-key="id" paginator :rows="8">
           <template #empty><div class="za-empty">Aún no hay cierres.</div></template>
-          <Column header="Nº"
-            ><template #body="{ data }">Z {{ data.zNumber }}</template></Column
-          >
-          <Column header="Fecha"
-            ><template #body="{ data }">{{ fmtDate(data.closedAt) }}</template></Column
-          >
-          <Column header="Ventas"
-            ><template #body="{ data }">{{ data.salesCount }}</template></Column
-          >
-          <Column header="Total"
-            ><template #body="{ data }"
+          <Column header="Nº Z">
+            <template #body="{ data }">{{
+              data.zNumber != null ? `Z ${data.zNumber}` : '—'
+            }}</template>
+          </Column>
+          <Column header="Terminal" field="terminalId" />
+          <Column header="Turno">
+            <template #body="{ data }">{{ cierreShiftLabel(data) }}</template>
+          </Column>
+          <Column header="Responsable">
+            <template #body="{ data }">{{
+              data.responsibleName || data.closedByName || data.cashierName
+            }}</template>
+          </Column>
+          <Column header="Cerrada">
+            <template #body="{ data }">{{ fmtDate(data.closedAt) }}</template>
+          </Column>
+          <Column header="Total">
+            <template #body="{ data }"
               ><span class="pos-money">{{ eur(data.totalCents) }}</span></template
-            ></Column
-          >
+            >
+          </Column>
+          <Column header="Descuadre">
+            <template #body="{ data }">
+              <span
+                class="pos-money aq-diff"
+                :class="
+                  data.differenceCents === 0
+                    ? 'aq-diff--ok'
+                    : (data.differenceCents ?? 0) > 0
+                      ? 'aq-diff--over'
+                      : 'aq-diff--short'
+                "
+                >{{ eur(data.differenceCents) }}</span
+              >
+            </template>
+          </Column>
           <Column header="">
             <template #body="{ data }">
-              <Button label="Ver" text size="small" @click="openDetail(data)" />
+              <Button label="Ver" text size="small" @click="detail = data" />
             </template>
           </Column>
         </DataTable>
       </div>
     </div>
 
-    <!-- Detalle de cierre -->
+    <!-- Detalle del cierre: the same document the POS shows and exports. -->
     <Dialog
-      v-model:visible="detailOpen"
+      :visible="detail !== null"
       modal
-      :style="{ width: '42rem' }"
-      :header="detail ? `Cierre Z nº ${detail.closure.zNumber}` : 'Detalle del cierre'"
+      :style="{ width: '60rem' }"
+      :header="detailTitle"
+      @update:visible="
+        (v: boolean) => {
+          if (!v) detail = null
+        }
+      "
     >
-      <div v-if="detailLoading" class="za-empty">Cargando…</div>
-      <div v-else-if="detail">
-        <div class="za-dhead">
-          {{ fmtDate(detail.closure.closedAt) }} · {{ detail.closure.terminalId }} ·
-          {{ detail.closure.salesCount }} ventas ·
-          <strong class="pos-money">{{ eur(detail.closure.totalCents) }}</strong>
-        </div>
-        <div class="za-title">Cobrado por método</div>
-        <div class="za-tenders">
-          <div class="za-tender">
-            <i class="pi pi-money-bill"></i><span>Efectivo</span>
-            <strong class="pos-money">{{ eur(detail.tenders.cashCents) }}</strong>
-          </div>
-          <div class="za-tender">
-            <i class="pi pi-credit-card"></i><span>Tarjeta</span>
-            <strong class="pos-money">{{ eur(detail.tenders.cardCents) }}</strong>
-          </div>
-          <div class="za-tender za-tender--credit">
-            <i class="pi pi-book"></i><span>A cuenta</span>
-            <strong class="pos-money">{{ eur(detail.tenders.creditCents) }}</strong>
-          </div>
-        </div>
-        <div class="za-title">Desglose por caja</div>
-        <div v-for="b in detail.breakdown" :key="b.accountingGroupId ?? '__none__'" class="za-drow">
-          <span
-            ><span class="za-bd__code">{{ b.code }}</span> {{ b.name }}</span
-          >
-          <span class="pos-money">{{ eur(b.totalCents) }}</span>
-        </div>
-        <div class="za-title">Tickets ({{ detail.tickets.length }})</div>
-        <DataTable :value="detail.tickets" data-key="id" paginator :rows="8" class="za-tickets">
-          <Column field="ticketNumber" header="Ticket" />
-          <Column header="Hora"
-            ><template #body="{ data }">{{ fmtDate(data.createdAt) }}</template></Column
-          >
-          <Column header="Total"
-            ><template #body="{ data }"
-              ><span class="pos-money">{{ eur(data.totalCents) }}</span></template
-            ></Column
-          >
-        </DataTable>
-      </div>
-      <template #footer><Button label="Cerrar" text @click="detailOpen = false" /></template>
+      <CierreReportFrame v-if="detail" :cierre="detail" :business="business" />
+      <template #footer>
+        <Button label="Guardar PDF" icon="pi pi-file-pdf" :loading="exporting" @click="savePdf" />
+        <Button label="Cerrar" text @click="detail = null" />
+      </template>
     </Dialog>
   </div>
 </template>
@@ -253,29 +305,6 @@ onMounted(refresh)
   grid-template-columns: 1fr 1.2fr;
   gap: 18px;
   align-items: start;
-}
-.za-done {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 22px;
-  margin-bottom: 16px;
-  background: var(--pos-green-soft);
-  border: 1px solid var(--pos-green);
-}
-.za-done i {
-  font-size: 26px;
-  color: var(--pos-green-hover);
-}
-.za-done__title {
-  font-weight: 900;
-  color: var(--pos-green-dark);
-  font-size: 15px;
-}
-.za-done__sub {
-  font-size: 13px;
-  color: var(--pos-text-2);
-  font-weight: 600;
 }
 .za-main,
 .za-hist {
@@ -303,6 +332,109 @@ onMounted(refresh)
   font-size: 13px;
   color: var(--pos-text-3);
   font-weight: 600;
+}
+.za-note {
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pos-warn);
+  background: var(--pos-warn-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.za-caja {
+  margin-top: 16px;
+  border: 1px solid var(--pos-border-subtle);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.za-caja__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.za-caja__title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--pos-green-dark);
+}
+.za-caja__sub {
+  font-size: 12px;
+  color: var(--pos-text-3);
+  font-weight: 600;
+  margin-top: 2px;
+}
+.za-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--pos-green-dark);
+  background: var(--pos-green-soft);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.za-badge--warn {
+  color: var(--pos-warn);
+  background: var(--pos-warn-bg);
+}
+.za-caja__kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0 10px;
+}
+.za-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.za-kpi span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pos-text-3);
+}
+.za-kpi b {
+  font-size: 20px;
+  color: var(--pos-green-dark);
+}
+.za-kpi small {
+  font-size: 11px;
+  color: var(--pos-text-3);
+}
+.za-sellers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.za-seller {
+  font-size: 12px;
+  color: var(--pos-text-2);
+  background: #f4f7f9;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.za-caja__foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.za-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.za-hint {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pos-text-3);
+  background: #f4f7f9;
+  border-radius: 8px;
+  padding: 6px 10px;
 }
 .za-title {
   margin: 20px 0 12px;
@@ -382,23 +514,17 @@ onMounted(refresh)
   border-radius: 6px;
   transition: width 0.2s ease;
 }
-.za-dhead {
-  font-size: 13px;
-  color: var(--pos-text-2);
-  font-weight: 600;
-  margin-bottom: 6px;
+.aq-diff {
+  font-weight: 800;
 }
-.za-drow {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  font-weight: 700;
-  color: #475569;
-  padding: 5px 0;
-  border-bottom: 1px solid #f4f7f9;
+.aq-diff--ok {
+  color: var(--pos-green-hover);
 }
-.za-tickets {
-  margin-top: 6px;
+.aq-diff--over {
+  color: var(--pos-warn);
+}
+.aq-diff--short {
+  color: var(--pos-danger);
 }
 .bo-error {
   color: #dc2626;

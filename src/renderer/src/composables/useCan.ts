@@ -1,12 +1,20 @@
+import type { Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '../stores/auth'
+
+export interface CanHelpers {
+  permissions: Ref<string[]>
+  can: (permission: string) => boolean
+  canAny: (perms: string[]) => boolean
+  canAll: (perms: string[]) => boolean
+}
 
 /**
  * Capability checks for templates/logic. Returns bound helpers plus the reactive
  * `permissions` ref, so `can(...)` used in a template re-evaluates when the
  * session changes. Prefer `v-if="can('stock:update')"` for show/hide.
  */
-export function useCan() {
+export function useCan(): CanHelpers {
   const auth = useAuthStore()
   const { permissions } = storeToRefs(auth)
   return {

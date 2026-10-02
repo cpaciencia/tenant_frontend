@@ -91,3 +91,17 @@ export function upsertUsers(db: DB, users: MirroredUser[]): number {
   })
   return txn(users)
 }
+
+/**
+ * Atomically replaces the user mirror. After a backend reset the admin is re-seeded
+ * with a new id; a plain upsert-by-id would orphan the old row (and could clash on
+ * UNIQUE(username)). Offline login resolves by username, so this stays safe.
+ */
+export function replaceUsers(db: DB, users: MirroredUser[]): number {
+  const txn = db.transaction((items: MirroredUser[]) => {
+    db.prepare('DELETE FROM users').run()
+    upsertUsers(db, items)
+    return items.length
+  })
+  return txn(users)
+}

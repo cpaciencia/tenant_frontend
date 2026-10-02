@@ -1,5 +1,10 @@
 import type { DB } from '../db/connection'
-import { getUsersWatermark, upsertUsers, type MirroredUser } from '../repositories/users'
+import {
+  getUsersWatermark,
+  upsertUsers,
+  replaceUsers,
+  type MirroredUser
+} from '../repositories/users'
 
 export type FetchLike = typeof fetch
 
@@ -25,8 +30,13 @@ function normalizeBase(baseUrl: string): string {
  * tolerate failure (no network) and fall back to whatever the mirror already has.
  * Returns the number of users upserted.
  */
-export async function pullUsers(db: DB, baseUrl: string, fetchFn: FetchLike = fetch): Promise<number> {
-  const watermark = getUsersWatermark(db)
+export async function pullUsers(
+  db: DB,
+  baseUrl: string,
+  fetchFn: FetchLike = fetch,
+  opts: { full?: boolean } = {}
+): Promise<number> {
+  const watermark = opts.full ? null : getUsersWatermark(db)
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/users${query}`, {
     method: 'GET',
@@ -46,5 +56,5 @@ export async function pullUsers(db: DB, baseUrl: string, fetchFn: FetchLike = fe
     permissions: Array.isArray(u.permissions) ? u.permissions : [],
     updatedAt: u.updatedAt
   }))
-  return upsertUsers(db, mapped)
+  return opts.full ? replaceUsers(db, mapped) : upsertUsers(db, mapped)
 }

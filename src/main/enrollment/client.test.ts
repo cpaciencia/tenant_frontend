@@ -10,9 +10,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe('enrollment client', () => {
   it('enrols and returns the issued credentials', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse({ terminalId: 'T01', token: 'tok-123', dbKey: 'key-abc' })
-    ) as unknown as FetchLike
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ terminalId: 'T01', token: 'tok-123', dbKey: 'key-abc' })
+      ) as unknown as FetchLike
     const client = createEnrollmentClient(fetchFn)
 
     const creds = await client.enroll('http://host:8080/', 'T01', 'ABCD2345')
@@ -37,9 +39,9 @@ describe('enrollment client', () => {
   })
 
   it('rejects an incomplete response body', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse({ terminalId: 'T01' })
-    ) as unknown as FetchLike
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ terminalId: 'T01' })) as unknown as FetchLike
     const client = createEnrollmentClient(fetchFn)
     await expect(client.enroll('http://h', 'T01', 'X')).rejects.toBeInstanceOf(EnrollmentError)
   })
@@ -54,8 +56,12 @@ describe('enrollment client', () => {
   })
 
   it('reports reachability: any response is up, a throw is down', async () => {
-    const up = createEnrollmentClient(vi.fn().mockResolvedValue(jsonResponse([])) as unknown as FetchLike)
-    const down = createEnrollmentClient(vi.fn().mockRejectedValue(new Error('offline')) as unknown as FetchLike)
+    const up = createEnrollmentClient(
+      vi.fn().mockResolvedValue(jsonResponse([])) as unknown as FetchLike
+    )
+    const down = createEnrollmentClient(
+      vi.fn().mockRejectedValue(new Error('offline')) as unknown as FetchLike
+    )
     expect(await up.testConnection('http://h')).toBe(true)
     expect(await down.testConnection('http://h')).toBe(false)
   })

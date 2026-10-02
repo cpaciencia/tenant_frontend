@@ -64,9 +64,7 @@ router.beforeEach(async (to) => {
     const item = navItems.find((n) => n.id === String(to.params.section))
     if (item?.permissions && !auth.canAny(item.permissions)) {
       const fallback = navItems.find((n) => !n.permissions || auth.canAny(n.permissions))
-      return fallback
-        ? { name: 'backoffice', params: { section: fallback.id } }
-        : { name: 'caja' }
+      return fallback ? { name: 'backoffice', params: { section: fallback.id } } : { name: 'caja' }
     }
   }
   return true

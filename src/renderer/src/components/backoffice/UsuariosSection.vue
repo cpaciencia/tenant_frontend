@@ -97,7 +97,10 @@ onMounted(load)
       <Column field="roleName" header="Rol" />
       <Column header="Estado">
         <template #body="{ data }">
-          <Tag :severity="data.active ? 'success' : 'secondary'" :value="data.active ? 'Activo' : 'Baja'" />
+          <Tag
+            :severity="data.active ? 'success' : 'secondary'"
+            :value="data.active ? 'Activo' : 'Baja'"
+          />
         </template>
       </Column>
       <Column v-if="can('user:deactivate')" header="Acciones" style="width: 8rem">

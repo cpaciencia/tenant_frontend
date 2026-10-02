@@ -2,6 +2,7 @@ import type { DB } from '../db/connection'
 import {
   getAccountingGroupsWatermark,
   upsertAccountingGroups,
+  replaceAccountingGroups,
   type MirroredAccountingGroup
 } from '../repositories/accountingGroups'
 
@@ -27,9 +28,10 @@ function normalizeBase(baseUrl: string): string {
 export async function pullAccountingGroups(
   db: DB,
   baseUrl: string,
-  fetchFn: FetchLike = fetch
+  fetchFn: FetchLike = fetch,
+  opts: { full?: boolean } = {}
 ): Promise<number> {
-  const watermark = getAccountingGroupsWatermark(db)
+  const watermark = opts.full ? null : getAccountingGroupsWatermark(db)
   const query = watermark ? `?since=${encodeURIComponent(watermark)}` : ''
   const res = await fetchFn(`${normalizeBase(baseUrl)}/api/catalog/accounting-groups${query}`, {
     method: 'GET',
@@ -46,5 +48,5 @@ export async function pullAccountingGroups(
     active: g.active,
     updatedAt: g.updatedAt
   }))
-  return upsertAccountingGroups(db, mapped)
+  return opts.full ? replaceAccountingGroups(db, mapped) : upsertAccountingGroups(db, mapped)
 }

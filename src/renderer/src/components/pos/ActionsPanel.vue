@@ -1,4 +1,8 @@
 <script setup lang="ts">
+/**
+ * "Producto" (no barcode) + COBRAR, and the quantity keypad (the number typed applies to
+ * the next product tapped).
+ */
 import { usePosStore } from '../../stores/pos'
 
 const store = usePosStore()
@@ -9,9 +13,19 @@ const isDanger = (k: string): boolean => k === 'C' || k === '⌫'
 
 <template>
   <section class="actions">
-    <button class="cobrar" :disabled="store.isEmpty" @click="store.openPay()">
-      <i class="pi pi-money-bill"></i> COBRAR
-    </button>
+    <div class="actions__main">
+      <button
+        class="free-price"
+        title="Vender por su precio un producto que no tiene código"
+        @click="store.freePriceOpen = true"
+      >
+        <i class="pi pi-euro"></i>
+        <span>Producto</span>
+      </button>
+      <button class="cobrar" :disabled="store.isEmpty" @click="store.openPay()">
+        <i class="pi pi-money-bill"></i> COBRAR
+      </button>
+    </div>
     <div class="actions__numpad">
       <button
         v-for="k in keys"
@@ -34,9 +48,38 @@ const isDanger = (k: string): boolean => k === 'C' || k === '⌫'
   gap: 10px;
   min-height: 0;
 }
-.cobrar {
+.actions__main {
   flex: 0 0 auto;
-  width: 100%;
+  display: flex;
+  gap: 10px;
+}
+.free-price {
+  flex: 0 0 auto;
+  height: 58px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #fff;
+  color: var(--pos-green-dark);
+  border: 1.5px solid var(--pos-border-medium);
+  border-radius: var(--pos-radius-tile);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+.free-price i {
+  font-size: 18px;
+  color: var(--pos-green);
+}
+.free-price:hover {
+  border-color: var(--pos-green);
+  background: var(--pos-green-soft);
+}
+.cobrar {
+  flex: 1;
   height: 58px;
   background: var(--pos-green);
   color: #fff;

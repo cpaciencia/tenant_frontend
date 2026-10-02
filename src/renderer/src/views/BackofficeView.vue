@@ -3,7 +3,10 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navItems, sectionTitles } from '../data/backoffice'
 import VentasSection from '../components/backoffice/VentasSection.vue'
+import ActividadSection from '../components/backoffice/ActividadSection.vue'
 import TicketsSection from '../components/backoffice/TicketsSection.vue'
+import FacturasSection from '../components/backoffice/FacturasSection.vue'
+import ProveedoresSection from '../components/backoffice/ProveedoresSection.vue'
 import ProductosSection from '../components/backoffice/ProductosSection.vue'
 import CategoriasSection from '../components/backoffice/CategoriasSection.vue'
 import CajasSection from '../components/backoffice/CajasSection.vue'
@@ -21,7 +24,10 @@ const auth = useAuthStore()
 
 const sections = {
   ventas: VentasSection,
+  actividad: ActividadSection,
   tickets: TicketsSection,
+  facturas: FacturasSection,
+  proveedores: ProveedoresSection,
   productos: ProductosSection,
   categorias: CategoriasSection,
   cajas: CajasSection,

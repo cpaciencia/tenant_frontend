@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createDatabase, type DB } from '../db/connection'
 import { runMigrations } from '../db/migrator'
 import { DEFAULT_SETTINGS } from '../../shared/types'
-import { getSettings, updateSettings, sanitizeSettings } from './settings'
+import { adoptEnrolledTerminalId, getSettings, updateSettings, sanitizeSettings } from './settings'
 
 let db: DB
 
@@ -47,5 +47,28 @@ describe('settings repository', () => {
     updateSettings(db, { terminalId: 'T05' })
     const updated = updateSettings(db, { terminalId: '   ' })
     expect(updated.terminalId).toBe('T05')
+  })
+
+  it('adopts the terminal id issued at enrolment over the default', () => {
+    expect(getSettings(db).terminalId).toBe('T01')
+    expect(adoptEnrolledTerminalId(db, 'T02').terminalId).toBe('T02')
+    expect(getSettings(db).terminalId).toBe('T02')
+  })
+
+  it('moves the open caja to the adopted terminal id, leaving closed ones alone', () => {
+    const insert = db.prepare(
+      `INSERT INTO cash_sessions (id, terminal_id, cashier_name, opened_at, status)
+       VALUES (?, 'T01', 'Ana', '2026-10-01T08:00:00.000Z', ?)`
+    )
+    insert.run('closed-1', 'closed')
+    insert.run('open-1', 'open')
+    adoptEnrolledTerminalId(db, 'T02')
+    const rows = db
+      .prepare(`SELECT id, terminal_id AS terminalId FROM cash_sessions ORDER BY id`)
+      .all()
+    expect(rows).toEqual([
+      { id: 'closed-1', terminalId: 'T01' },
+      { id: 'open-1', terminalId: 'T02' }
+    ])
   })
 })

@@ -22,7 +22,10 @@ defineProps<{
 }>()
 
 function eur(cents: number): string {
-  return (cents / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (cents / 100).toLocaleString('es-ES', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 }
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'medium' })
@@ -66,14 +69,14 @@ function fmtDate(iso: string): string {
     <div class="receipt__rule"></div>
 
     <div class="receipt__pay">
-      <div v-if="payment.cashCents > 0" class="receipt__pay-row">
+      <div v-if="payment.cashCents !== 0" class="receipt__pay-row">
         <span>Efectivo</span><span>{{ eur(payment.cashCents) }} €</span>
       </div>
-      <div v-if="payment.cardCents > 0" class="receipt__pay-row">
+      <div v-if="payment.cardCents !== 0" class="receipt__pay-row">
         <span>Tarjeta</span><span>{{ eur(payment.cardCents) }} €</span>
       </div>
-      <div v-if="payment.creditCents > 0" class="receipt__pay-row">
-        <span>A cuenta (fiado)</span><span>{{ eur(payment.creditCents) }} €</span>
+      <div v-if="payment.creditCents !== 0" class="receipt__pay-row">
+        <span>A cuenta</span><span>{{ eur(payment.creditCents) }} €</span>
       </div>
       <div v-if="changeCents && changeCents > 0" class="receipt__pay-row receipt__pay-row--change">
         <span>Cambio</span><span>{{ eur(changeCents) }} €</span>

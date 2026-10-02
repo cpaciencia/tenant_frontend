@@ -44,7 +44,10 @@ export function createEnrollmentClient(fetchFn: FetchLike = fetch): EnrollmentCl
           body: JSON.stringify({ terminalId, enrollmentCode: code })
         })
       } catch (cause) {
-        throw new EnrollmentError(`No se pudo conectar con el backend (${String(cause)})`, undefined)
+        throw new EnrollmentError(
+          `No se pudo conectar con el backend (${String(cause)})`,
+          undefined
+        )
       }
 
       if (!response.ok) {

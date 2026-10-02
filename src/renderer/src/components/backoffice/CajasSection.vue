@@ -38,7 +38,7 @@ async function load(): Promise<void> {
   try {
     groups.value = await listAccountingGroups()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'No se pudieron cargar las cajas'
+    error.value = e instanceof Error ? e.message : 'No se pudieron cargar los grupos contables'
   } finally {
     loading.value = false
   }
@@ -76,19 +76,19 @@ async function submit(): Promise<void> {
     dialogOpen.value = false
     await load()
   } catch (e) {
-    formError.value = e instanceof Error ? e.message : 'No se pudo guardar la caja'
+    formError.value = e instanceof Error ? e.message : 'No se pudo guardar el grupo contable'
   } finally {
     saving.value = false
   }
 }
 
 async function remove(group: AdminAccountingGroup): Promise<void> {
-  if (!confirm(`¿Eliminar la caja "${group.name}" (${group.code})?`)) return
+  if (!confirm(`¿Eliminar el grupo contable "${group.name}" (${group.code})?`)) return
   try {
     await deleteAccountingGroup(group.id)
     await load()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'No se pudo eliminar la caja'
+    error.value = e instanceof Error ? e.message : 'No se pudo eliminar el grupo contable'
   }
 }
 
@@ -100,7 +100,7 @@ onMounted(load)
     <div class="bo-toolbar">
       <Button
         v-if="can('accounting_group:create')"
-        label="Nueva caja"
+        label="Nuevo grupo"
         icon="pi pi-plus"
         @click="openCreate"
       />
@@ -111,7 +111,7 @@ onMounted(load)
 
     <DataTable :value="filtered" :loading="loading" data-key="id" class="bo-card">
       <template #empty>
-        <div class="bo-empty">No hay cajas por categoría todavía.</div>
+        <div class="bo-empty">No hay grupos contables todavía.</div>
       </template>
       <Column field="code" header="Código" sortable style="width: 12rem" />
       <Column field="name" header="Nombre" sortable />
@@ -151,7 +151,7 @@ onMounted(load)
     <Dialog
       v-model:visible="dialogOpen"
       modal
-      :header="editingId ? 'Editar caja' : 'Nueva caja'"
+      :header="editingId ? 'Editar grupo contable' : 'Nuevo grupo contable'"
       :style="{ width: '30rem' }"
     >
       <div class="bo-form">
