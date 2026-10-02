@@ -124,7 +124,7 @@ onMounted(load)
     >
       <div class="st-form">
         <label>Existencias</label>
-        <InputNumber v-model="newStock" :min="0" showButtons fluid />
+        <InputNumber v-model="newStock" :min="0" show-buttons fluid />
         <small>Fija el número de unidades en almacén (valor absoluto).</small>
       </div>
       <template #footer>

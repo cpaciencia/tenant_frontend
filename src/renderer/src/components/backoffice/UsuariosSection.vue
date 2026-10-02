@@ -5,6 +5,7 @@ import {
   listRoles,
   createUser,
   deactivateUser,
+  updateUser,
   type AdminUser,
   type AdminRole
 } from '../../services/admin'
@@ -21,6 +22,8 @@ const dialogOpen = ref(false)
 const saving = ref(false)
 const formError = ref('')
 const form = reactive({ username: '', password: '', fullName: '', roleId: '' as string })
+/** User being edited (null = creating). */
+const editing = ref<AdminUser | null>(null)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -35,6 +38,7 @@ async function load(): Promise<void> {
 }
 
 function openCreate(): void {
+  editing.value = null
   form.username = ''
   form.password = ''
   form.fullName = ''
@@ -43,7 +47,50 @@ function openCreate(): void {
   dialogOpen.value = true
 }
 
+function openEdit(u: AdminUser): void {
+  editing.value = u
+  form.username = u.username
+  form.password = ''
+  form.fullName = u.fullName ?? ''
+  form.roleId = u.roleId ?? ''
+  formError.value = ''
+  dialogOpen.value = true
+}
+
+async function saveEdit(): Promise<void> {
+  if (!editing.value) return
+  if (form.password && form.password.length < 6) {
+    formError.value = 'La contraseña debe tener al menos 6 caracteres'
+    return
+  }
+  saving.value = true
+  formError.value = ''
+  try {
+    await updateUser(editing.value.id, {
+      fullName: form.fullName.trim(),
+      roleId: form.roleId || null,
+      password: form.password || undefined
+    })
+    dialogOpen.value = false
+    await load()
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : 'No se pudo guardar el usuario'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function reactivate(u: AdminUser): Promise<void> {
+  try {
+    await updateUser(u.id, { active: true })
+    await load()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'No se pudo reactivar'
+  }
+}
+
 async function submit(): Promise<void> {
+  if (editing.value) return saveEdit()
   if (!form.username.trim() || !form.password.trim()) {
     formError.value = 'Usuario y contraseña son obligatorios'
     return
@@ -103,10 +150,28 @@ onMounted(load)
           />
         </template>
       </Column>
-      <Column v-if="can('user:deactivate')" header="Acciones" style="width: 8rem">
+      <Column
+        v-if="can('user:update') || can('user:deactivate')"
+        header="Acciones"
+        style="width: 13rem"
+      >
         <template #body="{ data }">
           <Button
-            v-if="data.active"
+            v-if="can('user:update')"
+            label="Editar"
+            text
+            size="small"
+            @click="openEdit(data)"
+          />
+          <Button
+            v-if="!data.active && can('user:update')"
+            label="Reactivar"
+            text
+            size="small"
+            @click="reactivate(data)"
+          />
+          <Button
+            v-if="data.active && can('user:deactivate')"
             label="Baja"
             severity="danger"
             text
@@ -117,11 +182,16 @@ onMounted(load)
       </Column>
     </DataTable>
 
-    <Dialog v-model:visible="dialogOpen" modal header="Nuevo usuario" :style="{ width: '26rem' }">
+    <Dialog
+      v-model:visible="dialogOpen"
+      modal
+      :header="editing ? `Editar ${editing.username}` : 'Nuevo usuario'"
+      :style="{ width: '26rem' }"
+    >
       <div class="bo-form">
         <label>Usuario</label>
-        <InputText v-model="form.username" autocomplete="off" />
-        <label>Contraseña</label>
+        <InputText v-model="form.username" autocomplete="off" :disabled="!!editing" />
+        <label>{{ editing ? 'Nueva contraseña (vacío = no cambiar)' : 'Contraseña' }}</label>
         <Password v-model="form.password" :feedback="false" toggle-mask fluid />
         <label>Nombre completo</label>
         <InputText v-model="form.fullName" />
@@ -137,7 +207,7 @@ onMounted(load)
       </div>
       <template #footer>
         <Button label="Cancelar" text @click="dialogOpen = false" />
-        <Button label="Crear" :loading="saving" @click="submit" />
+        <Button :label="editing ? 'Guardar' : 'Crear'" :loading="saving" @click="submit" />
       </template>
     </Dialog>
   </div>

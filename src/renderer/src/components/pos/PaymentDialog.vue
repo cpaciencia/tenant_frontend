@@ -16,7 +16,7 @@ const {
   payMethod,
   cashGiven,
   mixedCashEur,
-  fiadoClient,
+  creditClientId,
   settleClientId,
   settleEur,
   settleAmount,
@@ -76,7 +76,7 @@ const methods = [
   { id: 'efectivo' as const, label: 'Efectivo', icon: 'pi-money-bill' },
   { id: 'tarjeta' as const, label: 'Tarjeta', icon: 'pi-credit-card' },
   { id: 'mixto' as const, label: 'Mixto', icon: 'pi-wallet' },
-  { id: 'fiado' as const, label: 'A cuenta', icon: 'pi-book' },
+  { id: 'credit' as const, label: 'A cuenta', icon: 'pi-book' },
   { id: 'interno' as const, label: 'Consumo interno', icon: 'pi-home' }
 ]
 // On a refund only direct cash/card give-back make sense (no mixed/credit).
@@ -91,7 +91,7 @@ const mixedCard = computed(() => Math.max(0, dueTotal.value - (mixedCashEur.valu
 const clients = useClientsStore()
 const settleOpen = ref(false)
 const canSettle = computed(
-  () => !isRefund.value && payMethod.value !== 'fiado' && payMethod.value !== 'interno'
+  () => !isRefund.value && payMethod.value !== 'credit' && payMethod.value !== 'interno'
 )
 const settleBalance = computed(() => (clients.get(settleClientId.value)?.balanceCents ?? 0) / 100)
 // Picking a client proposes the whole debt.
@@ -260,9 +260,9 @@ const showSuccessChange = computed(() => payChange.value > 0)
           </div>
 
           <!-- A cuenta (credit) -->
-          <div v-else-if="payMethod === 'fiado'">
-            <div class="pay-fiado__lead">Anotar el importe a la cuenta de:</div>
-            <ClientPicker v-model="fiadoClient" allow-create />
+          <div v-else-if="payMethod === 'credit'">
+            <div class="pay-credit__lead">Anotar el importe a la cuenta de:</div>
+            <ClientPicker v-model="creditClientId" allow-create />
           </div>
 
           <!-- Internal consumption (not a sale) -->
@@ -779,7 +779,7 @@ const showSuccessChange = computed(() => payChange.value > 0)
   margin-top: 6px;
 }
 
-.pay-fiado__lead {
+.pay-credit__lead {
   font-size: 13px;
   font-weight: 700;
   color: var(--pos-text-2);

@@ -208,8 +208,8 @@ export interface Tenders {
   creditCents: number
 }
 
-/** A credit ("fiado") sale inside a cierre: who owes what. */
-export interface FiadoEntry {
+/** A credit ("a cuenta") sale inside a cierre: who owes what. Wire/DB name stays `fiados` for stored cierres. */
+export interface CreditSaleEntry {
   saleId: string
   ticketNumber: string
   clientId: string | null
@@ -466,7 +466,7 @@ export interface CashSession {
   totalCents: number
   tenders: Tenders
   breakdown: ZBreakdownRow[]
-  fiados: FiadoEntry[]
+  fiados: CreditSaleEntry[]
   sellers: SellerTotal[]
   /** Float corrections made when the caja was accepted (oldest first). */
   floatAdjustments: FloatAdjustment[]
@@ -526,7 +526,7 @@ export interface SessionArqueo {
   totalCents: number
   tenders: Tenders
   breakdown: ZBreakdownRow[]
-  fiados: FiadoEntry[]
+  fiados: CreditSaleEntry[]
   sellers: SellerTotal[]
   /**
    * openingFloatCents + cash sales + money put in − supplier payments − money

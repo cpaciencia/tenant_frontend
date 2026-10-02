@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePosStore } from '../stores/pos'
@@ -18,6 +18,17 @@ const loading = ref(false)
 
 // Terminal settings (backend URL / re-enrolment) reachable before login.
 const configOpen = ref(false)
+
+/** This till's number, shown under the logo (empty in the web backoffice). */
+const terminalLabel = ref('')
+onMounted(async () => {
+  try {
+    const s = await window.api.settings.get()
+    terminalLabel.value = s.terminalId ? `PUESTO ${s.terminalId}` : ''
+  } catch {
+    terminalLabel.value = ''
+  }
+})
 
 async function doLogin(): Promise<void> {
   if (!username.value.trim() || !password.value.trim()) {
@@ -55,7 +66,9 @@ async function doLogin(): Promise<void> {
             Camping Parque Tropical · Mini-market y servicios de la Costa del Sol
           </div>
         </div>
-        <div class="login__version">VERSIÓN 2.0 · TERMINAL CAJA 01</div>
+        <div class="login__version">
+          VERSIÓN 2.0{{ terminalLabel ? ` · ${terminalLabel}` : '' }}
+        </div>
       </div>
     </div>
 
@@ -96,7 +109,6 @@ async function doLogin(): Promise<void> {
         </div>
 
         <button class="login__submit" @click="doLogin">ENTRAR</button>
-        <div class="login__hint">Acceso demo · pulsa <b>Entrar</b></div>
       </div>
     </div>
 
@@ -275,14 +287,5 @@ async function doLogin(): Promise<void> {
 }
 .login__submit:hover {
   background: var(--pos-green-hover);
-}
-.login__hint {
-  text-align: center;
-  color: #9ca3af;
-  font-size: 13px;
-  margin-top: 18px;
-}
-.login__hint b {
-  color: #6b7280;
 }
 </style>

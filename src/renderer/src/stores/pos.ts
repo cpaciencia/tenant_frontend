@@ -16,7 +16,7 @@ import type {
   Sale
 } from '../../../shared/types'
 
-export type PayMethod = 'efectivo' | 'tarjeta' | 'mixto' | 'fiado' | 'interno'
+export type PayMethod = 'efectivo' | 'tarjeta' | 'mixto' | 'credit' | 'interno'
 
 export interface TicketLine {
   key: string
@@ -143,7 +143,7 @@ export const usePosStore = defineStore('pos', () => {
   const cashGiven = ref(0)
   /** For mixed payment: how much of the total is paid in cash (euros); rest on card. */
   const mixedCashEur = ref(0)
-  const fiadoClient = ref<string | null>(null)
+  const creditClientId = ref<string | null>(null)
   /** Internal consumption: account, who takes the goods (mandatory) and why. */
   const internalAccountId = ref<string | null>(null)
   const internalTakenBy = ref('')
@@ -505,7 +505,7 @@ export const usePosStore = defineStore('pos', () => {
     payMethod.value = 'efectivo'
     cashGiven.value = 0
     mixedCashEur.value = 0
-    fiadoClient.value = null
+    creditClientId.value = null
     settleClientId.value = null
     settleEur.value = null
     internalAccountId.value = null
@@ -550,7 +550,7 @@ export const usePosStore = defineStore('pos', () => {
 
   /** Debt collected with this purchase (euros): never on a credit sale or a refund. */
   const settleAmount = computed(() =>
-    settleClientId.value && !isRefund.value && payMethod.value !== 'fiado'
+    settleClientId.value && !isRefund.value && payMethod.value !== 'credit'
       ? Math.max(0, settleEur.value ?? 0)
       : 0
   )
@@ -558,7 +558,7 @@ export const usePosStore = defineStore('pos', () => {
   const settleValid = computed(
     () =>
       !settleClientId.value ||
-      payMethod.value === 'fiado' ||
+      payMethod.value === 'credit' ||
       (settleAmount.value > 0 &&
         Math.round(settleAmount.value * 100) <= (settleClient.value?.balanceCents ?? 0))
   )
@@ -579,7 +579,7 @@ export const usePosStore = defineStore('pos', () => {
     // Refund: pay it straight back in cash or card (no change calculation needed).
     if (isRefund.value) return payMethod.value === 'efectivo' || payMethod.value === 'tarjeta'
     if (payMethod.value === 'efectivo') return cashOk.value
-    if (payMethod.value === 'fiado') return !!fiadoClient.value
+    if (payMethod.value === 'credit') return !!creditClientId.value
     if (payMethod.value === 'interno')
       return internalAllowed.value && !!internalAccountId.value && !!internalTakenBy.value.trim()
     if (payMethod.value === 'mixto')
@@ -606,12 +606,12 @@ export const usePosStore = defineStore('pos', () => {
       return { cashCents: cash, cardCents: totalCents - cash, creditCents: 0, ...none }
     }
     // A cuenta: the whole total goes on the client's account (Main names it).
-    const client = useClientsStore().get(fiadoClient.value)
+    const client = useClientsStore().get(creditClientId.value)
     return {
       cashCents: 0,
       cardCents: 0,
       creditCents: totalCents,
-      clientId: fiadoClient.value,
+      clientId: creditClientId.value,
       clientName: client?.name ?? null
     }
   }
@@ -794,7 +794,7 @@ export const usePosStore = defineStore('pos', () => {
     payOpen.value = false
     payDone.value = false
     cashGiven.value = 0
-    fiadoClient.value = null
+    creditClientId.value = null
     settleClientId.value = null
     settleEur.value = null
     payError.value = ''
@@ -834,7 +834,7 @@ export const usePosStore = defineStore('pos', () => {
     payMethod,
     cashGiven,
     mixedCashEur,
-    fiadoClient,
+    creditClientId,
     settleClientId,
     settleEur,
     internalAccountId,

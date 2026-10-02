@@ -2,7 +2,7 @@ import type { DB } from '../db/connection'
 import type {
   CashMovement,
   CashSession,
-  FiadoEntry,
+  CreditSaleEntry,
   FloatAdjustment,
   SellerTotal,
   Tenders,
@@ -94,7 +94,7 @@ function mapRow(r: SessionRow): CashSession {
     totalCents: r.total_cents,
     tenders: parseTenders(r.tenders_json),
     breakdown: parseList<ZBreakdownRow>(r.breakdown_json),
-    fiados: parseList<FiadoEntry>(r.fiados_json),
+    fiados: parseList<CreditSaleEntry>(r.fiados_json),
     sellers: parseList<SellerTotal>(r.sellers_json),
     floatAdjustments: parseList<FloatAdjustment>(r.float_adjustments_json),
     cashMovements: parseList<CashMovement>(r.movements_json),
@@ -235,7 +235,7 @@ export interface CloseSessionFields {
   totalCents: number
   tenders: Tenders
   breakdown: ZBreakdownRow[]
-  fiados: FiadoEntry[]
+  fiados: CreditSaleEntry[]
   sellers: SellerTotal[]
   cashMovements: CashMovement[]
   settlements: AccountPayment[]

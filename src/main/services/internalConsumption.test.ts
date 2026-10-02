@@ -50,7 +50,9 @@ describe('internal consumption', () => {
       .get() as { n: number }
     expect(queued.n).toBe(1)
     const audit = db
-      .prepare("SELECT data_json AS data FROM audit_events WHERE type = 'internal_consumption.recorded'")
+      .prepare(
+        "SELECT data_json AS data FROM audit_events WHERE type = 'internal_consumption.recorded'"
+      )
       .get() as { data: string }
     expect(JSON.parse(audit.data)).toMatchObject({ takenByName: 'Ana', accountName: 'Limpieza' })
 

@@ -72,6 +72,8 @@ export const updateUser = (
     fullName?: string
     roleId?: string | null
     active?: boolean
+    /** Non-blank = reset the password. */
+    password?: string
     overrides?: Override[]
   }
 ): Promise<AdminUser> =>

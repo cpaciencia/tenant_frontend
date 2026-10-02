@@ -5,7 +5,7 @@ import type {
   CashSession,
   CloseSessionRequest,
   CloseSessionResult,
-  FiadoEntry,
+  CreditSaleEntry,
   OpenSessionRequest,
   SellerTotal,
   SessionArqueo,
@@ -88,7 +88,7 @@ interface Aggregate {
   totalCents: number
   tenders: Tenders
   breakdown: ZBreakdownRow[]
-  fiados: FiadoEntry[]
+  fiados: CreditSaleEntry[]
   sellers: SellerTotal[]
 }
 
@@ -110,7 +110,7 @@ function aggregateSession(db: DB, sessionId: string): Aggregate {
   const cajas = new Map(listAccountingGroups(db).map((g) => [g.id, g]))
   const buckets = new Map<string, ZBreakdownRow>()
   const sellers = new Map<string, SellerTotal>()
-  const fiados: FiadoEntry[] = []
+  const fiados: CreditSaleEntry[] = []
   const tenders: Tenders = { cashCents: 0, cardCents: 0, creditCents: 0 }
   let totalCents = 0
 
